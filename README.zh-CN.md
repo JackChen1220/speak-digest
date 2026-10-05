@@ -29,11 +29,11 @@ Speak Digest 是一个需要自行提供 API Key 的开源项目，通过 GitHub
 
 你不需要看懂代码，也不需要会使用命令行。把下面这段话发送给你的编程 Agent：
 
-> 请把这个项目下载或克隆到我选择的长期保留文件夹，告诉我准确的完整路径，并让 Chrome“加载已解压的扩展程序”使用同一个文件夹。如果我在第一次安装时需要位置建议，可以推荐 macOS 或 Linux 上的 `~/Documents/youtube-digest`，或 Windows 上的 `%USERPROFILE%\Documents\youtube-digest`，但不要假设我一定使用这些路径。请用简单易懂的语言一步一步指导我完成安装和配置。https://github.com/JackChen1220/youtube-digest
+> 请把这个项目下载或克隆到我选择的长期保留文件夹，告诉我准确的完整路径，并让 Chrome“加载已解压的扩展程序”使用同一个文件夹。如果我在第一次安装时需要位置建议，可以推荐 macOS 或 Linux 上的 `~/Documents/speak-digest`，或 Windows 上的 `%USERPROFILE%\Documents\speak-digest`，但不要假设我一定使用这些路径。请用简单易懂的语言一步一步指导我完成安装和配置。https://github.com/JackChen1220/speak-digest
 
 你的 Agent 应该帮你：
 
-1. 先询问你想把项目长期保存在哪里，再下载或克隆到那里，并告诉你准确的完整路径。如果你需要建议，可以推荐 macOS 或 Linux 上的 `~/Documents/youtube-digest`，或 Windows 上的 `%USERPROFILE%\Documents\youtube-digest`。
+1. 先询问你想把项目长期保存在哪里，再下载或克隆到那里，并告诉你准确的完整路径。如果你需要建议，可以推荐 macOS 或 Linux 上的 `~/Documents/speak-digest`，或 Windows 上的 `%USERPROFILE%\Documents\speak-digest`。
 2. 打开下方 Supadata 和 DeepSeek 官方页面，指导你创建自己的账号。Tavily 是可选的，只有 Ask 联网搜索才需要。
 3. 指导你在 Chrome 中通过“加载已解压的扩展程序”选择你刚才确定的那个准确项目文件夹。
 4. 告诉你应该在扩展的“设置”页面哪个位置填写 API Key。
@@ -47,9 +47,9 @@ Speak Digest 是一个需要自行提供 API Key 的开源项目，通过 GitHub
 
 如果你想自己操作：
 
-1. 打开 [github.com/JackChen1220/youtube-digest](https://github.com/JackChen1220/youtube-digest)。
+1. 打开 [github.com/JackChen1220/speak-digest](https://github.com/JackChen1220/speak-digest)。
 2. 点击 **Code**，再选择 **Download ZIP**。
-3. 选择一个长期保留的文件夹，并把项目解压到这里。可选建议是 macOS 或 Linux 上的 `~/Documents/youtube-digest`，或 Windows 上的 `%USERPROFILE%\Documents\youtube-digest`。你也可以使用其他文件夹。
+3. 选择一个长期保留的文件夹，并把项目解压到这里。可选建议是 macOS 或 Linux 上的 `~/Documents/speak-digest`，或 Windows 上的 `%USERPROFILE%\Documents\speak-digest`。你也可以使用其他文件夹。
 4. 在 Chrome 地址栏打开 `chrome://extensions`。
 5. 打开右上角的“开发者模式”。
 6. 点击“加载已解压的扩展程序”。

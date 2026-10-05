@@ -29,11 +29,11 @@ Speak Digest is a bring-your-own-key project installed locally from GitHub. It i
 
 You do not need to understand the code or use the command line. Send this message to your coding agent:
 
-> Download or clone this project into a permanent folder I choose, tell me its exact full path, and use that same folder for Chrome's Load unpacked step. If I need a suggestion during this first installation, offer `~/Documents/youtube-digest` on macOS or Linux, or `%USERPROFILE%\Documents\youtube-digest` on Windows, but do not assume either path. Walk me through installation and setup in simple terms. https://github.com/JackChen1220/youtube-digest
+> Download or clone this project into a permanent folder I choose, tell me its exact full path, and use that same folder for Chrome's Load unpacked step. If I need a suggestion during this first installation, offer `~/Documents/speak-digest` on macOS or Linux, or `%USERPROFILE%\Documents\speak-digest` on Windows, but do not assume either path. Walk me through installation and setup in simple terms. https://github.com/JackChen1220/speak-digest
 
 Your agent should:
 
-1. Ask where you want to keep the project, download or clone it there, and tell you the exact full path. If you want a suggestion, it can offer `~/Documents/youtube-digest` on macOS or Linux, or `%USERPROFILE%\Documents\youtube-digest` on Windows.
+1. Ask where you want to keep the project, download or clone it there, and tell you the exact full path. If you want a suggestion, it can offer `~/Documents/speak-digest` on macOS or Linux, or `%USERPROFILE%\Documents\speak-digest` on Windows.
 2. Open the official Supadata and DeepSeek pages below and help you create your own accounts. Tavily is optional and is needed only for Ask web search.
 3. Walk you through selecting the exact project folder you chose in Chrome with **Load unpacked**.
 4. Show you where to enter your API keys in the extension's **Settings** page.
@@ -47,9 +47,9 @@ Never paste an API key into an AI chat, source file, screenshot, or public messa
 
 If you prefer to do it yourself:
 
-1. Open [github.com/JackChen1220/youtube-digest](https://github.com/JackChen1220/youtube-digest).
+1. Open [github.com/JackChen1220/speak-digest](https://github.com/JackChen1220/speak-digest).
 2. Choose **Code**, then **Download ZIP**.
-3. Choose a permanent folder and unzip the project there. Optional suggestions are `~/Documents/youtube-digest` on macOS or Linux, or `%USERPROFILE%\Documents\youtube-digest` on Windows. You may use a different folder.
+3. Choose a permanent folder and unzip the project there. Optional suggestions are `~/Documents/speak-digest` on macOS or Linux, or `%USERPROFILE%\Documents\speak-digest` on Windows. You may use a different folder.
 4. In Chrome, open `chrome://extensions`.
 5. Turn on **Developer mode**.
 6. Click **Load unpacked**.
