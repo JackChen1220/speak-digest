@@ -9,8 +9,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
-function loadBackgroundRelayHarness(activeTabs) {
-  const calls = { query: [], sendMessage: [] };
+function loadBackgroundRelayHarness(activeTabs, overrides = {}) {
+  const calls = { query: [], sendMessage: [], executeScript: [] };
   let messageListener;
   const listeners = { addListener() {} };
   const sandbox = {
@@ -54,14 +54,26 @@ function loadBackgroundRelayHarness(activeTabs) {
           if (Object.hasOwn(options, "url")) {
             throw new Error("url-filtered tab fallback is forbidden");
           }
-          return activeTabs;
+          return typeof activeTabs === "function"
+            ? activeTabs(calls.query.length)
+            : activeTabs;
         },
         async sendMessage(tabId, payload) {
           calls.sendMessage.push({ tabId, payload });
+          if (overrides.sendMessage) {
+            return overrides.sendMessage(tabId, payload);
+          }
           return { from: tabId };
         },
       },
-      scripting: { executeScript: async () => [] },
+      scripting: {
+        async executeScript(options) {
+          calls.executeScript.push(options);
+          return overrides.executeScript
+            ? overrides.executeScript(options)
+            : [];
+        },
+      },
     },
     YTD_SETTINGS: {
       STORAGE_KEY: "ytd_settings",
@@ -118,6 +130,86 @@ test("background relay targets only the exact active YouTube tab", async () => {
   assert.deepEqual(plain(calls.query), [{ active: true, lastFocusedWindow: true }]);
   assert.deepEqual(plain(calls.sendMessage), [{ tabId: 13, payload }]);
   assert.deepEqual(plain(result), { success: true, response: { from: 13 } });
+});
+
+test("background relay reconnects a missing content receiver on the same active tab", async () => {
+  let attempts = 0;
+  const tab = { id: 13, url: "https://www.youtube.com/watch?v=current" };
+  const { calls, relay } = loadBackgroundRelayHarness([tab], {
+    sendMessage: async (tabId) => {
+      if (++attempts === 1) {
+        throw new Error("Could not establish connection. Receiving end does not exist.");
+      }
+      return { from: tabId };
+    },
+  });
+
+  const result = await relay({ action: "getVideoInfo" });
+  assert.deepEqual(plain(result), { success: true, response: { from: 13 } });
+  assert.equal(calls.sendMessage.length, 2);
+  assert.deepEqual(plain(calls.executeScript[0]),
+    { target: { tabId: 13 }, files: ["content.js"] },
+  );
+  assert.equal(calls.executeScript.length, 2, "video info also reads player data");
+  assert.equal(calls.query.length, 3);
+});
+
+test("background relay never reinjects after the active tab changes", async () => {
+  const { calls, relay } = loadBackgroundRelayHarness(
+    (queryCount) => [
+      queryCount === 1
+        ? { id: 13, url: "https://www.youtube.com/watch?v=current" }
+        : { id: 14, url: "https://www.youtube.com/watch?v=other" },
+    ],
+    {
+      sendMessage: async () => {
+        throw new Error("Receiving end does not exist.");
+      },
+    },
+  );
+
+  const result = await relay();
+  assert.equal(result.success, false);
+  assert.equal(result.code, "CONTENT_SCRIPT_UNAVAILABLE");
+  assert.match(result.error, /Refresh the YouTube tab/);
+  assert.deepEqual(calls.executeScript, []);
+  assert.deepEqual(plain(calls.sendMessage), [
+    { tabId: 13, payload: { action: "seekTo", timestamp: 10 } },
+  ]);
+});
+
+test("background relay offers refresh if the receiver is still missing", async () => {
+  const { calls, relay } = loadBackgroundRelayHarness(
+    [{ id: 13, url: "https://www.youtube.com/watch?v=current" }],
+    {
+      sendMessage: async () => {
+        throw new Error("Receiving end does not exist.");
+      },
+    },
+  );
+
+  const result = await relay();
+  assert.equal(result.success, false);
+  assert.equal(result.code, "CONTENT_SCRIPT_UNAVAILABLE");
+  assert.match(result.error, /Refresh the YouTube tab/);
+  assert.equal(calls.executeScript.length, 1);
+  assert.equal(calls.sendMessage.length, 2);
+});
+
+test("background relay does not inject for unrelated message errors", async () => {
+  const { calls, relay } = loadBackgroundRelayHarness(
+    [{ id: 13, url: "https://www.youtube.com/watch?v=current" }],
+    {
+      sendMessage: async () => {
+        throw new Error("The tab was closed.");
+      },
+    },
+  );
+
+  const result = await relay();
+  assert.equal(result.success, false);
+  assert.equal(result.error, "The tab was closed.");
+  assert.deepEqual(calls.executeScript, []);
 });
 
 test("background relay source contains no URL-filtered or arbitrary YouTube fallback", () => {
@@ -379,6 +471,31 @@ test("side panel tab reconciliation fails closed without an active tab", async (
   assert.equal(harness.elements.get("welcomeState").style.display, "flex");
   assert.deepEqual(harness.tabCalls.runtime, []);
   assert.equal(harness.helpers.getRaceState().currentVideoId, null);
+});
+
+test("side panel shows refresh guidance when the content script cannot reconnect", async () => {
+  const harness = loadSidepanelRaceHarness({
+    activeTabs: [
+      { id: 21, url: "https://www.youtube.com/watch?v=front" },
+    ],
+    cacheGets: async () => ({}),
+    sendMessage: async () => ({
+      success: false,
+      code: "CONTENT_SCRIPT_UNAVAILABLE",
+      error: "Refresh the YouTube tab to reconnect Speak Digest.",
+    }),
+  });
+
+  await harness.helpers.checkCurrentTab();
+
+  assert.equal(harness.elements.get("errorState").style.display, "block");
+  assert.equal(harness.elements.get("errorTitle").textContent, "YouTube connection lost");
+  assert.match(harness.elements.get("errorMessage").textContent, /Refresh the YouTube tab/);
+  assert.equal(harness.elements.get("errorBtn").textContent, "Retry connection");
+  assert.equal(harness.helpers.getRaceState().currentVideoId, null);
+  assert.deepEqual(plain(harness.tabCalls.runtime), [
+    { action: "relayToContent", payload: { action: "getVideoInfo" } },
+  ]);
 });
 
 test("side panel keeps video and Ask state when a non-YouTube tab is active", async () => {

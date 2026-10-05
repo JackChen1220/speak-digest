@@ -62,7 +62,7 @@ async function saveSettings(event) {
       [YTD_SETTINGS.STORAGE_KEY]: settings,
     });
 
-    saveStatus.textContent = "Saved. Reopen YouTube Digest to use these settings.";
+    saveStatus.textContent = "Saved. Reopen Speak Digest to use these settings.";
   } catch (error) {
     saveStatus.textContent = error.message;
   }
@@ -99,5 +99,5 @@ async function resetAllData() {
 
   await chrome.storage.local.clear();
   await loadSettings();
-  dataStatus.textContent = "All YouTube Digest data was deleted.";
+  dataStatus.textContent = "All Speak Digest data was deleted.";
 }

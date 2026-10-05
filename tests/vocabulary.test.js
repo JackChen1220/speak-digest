@@ -787,29 +787,16 @@ test("Vocabulary rendering, deletion, and highlighting keep untrusted text out o
   assert.doesNotMatch(source, /<mark[^`]*\$\{/);
 });
 
-test("Vocabulary transcript highlights use a dedicated bright-yellow treatment", () => {
+test("Vocabulary transcript highlights use the Speak Replay purple underline", () => {
   const css = read("sidepanel.css");
   const highlightBlock = css.match(/\.vocabulary-highlight\s*\{([^}]*)\}/)?.[1] || "";
 
-  assert.match(css, /--vocabulary-highlight-bg:\s*#ffdf3f;/i);
-  assert.match(css, /--vocabulary-highlight-ink:\s*#2e2a24;/i);
-  assert.match(css, /--vocabulary-highlight-edge:\s*#c49a00;/i);
-  assert.match(highlightBlock, /padding:\s*0 1px;/);
-  assert.match(highlightBlock, /border-radius:\s*3px;/);
-  assert.match(
-    highlightBlock,
-    /background:\s*var\(--vocabulary-highlight-bg\);/,
-  );
-  assert.match(
-    highlightBlock,
-    /color:\s*var\(--vocabulary-highlight-ink\);/,
-  );
-  assert.match(
-    highlightBlock,
-    /box-shadow:\s*inset 0 -2px 0 var\(--vocabulary-highlight-edge\);/,
-  );
-  assert.doesNotMatch(highlightBlock, /rgba\(217,\s*154,\s*91/i);
-  assert.doesNotMatch(highlightBlock, /color:\s*inherit/);
+  assert.match(css, /--vocabulary-highlight-bg:\s*transparent;/i);
+  assert.match(css, /--vocabulary-highlight-ink:\s*#252333;/i);
+  assert.match(css, /--vocabulary-highlight-edge:\s*#6447eb;/i);
+  assert.match(highlightBlock, /background:\s*var\(--vocabulary-highlight-bg\);/);
+  assert.match(highlightBlock, /color:\s*var\(--vocabulary-highlight-ink\);/);
+  assert.match(highlightBlock, /box-shadow:\s*inset 0 -2px 0 var\(--vocabulary-highlight-edge\);/);
 });
 
 test("Vocabulary cards render phonetics as text and visibly explain unavailable pronunciation", () => {
@@ -840,7 +827,7 @@ test("Vocabulary cards render phonetics as text and visibly explain unavailable 
   assert.doesNotMatch(renderSource, /pronunciationButton\.disabled\s*=\s*true/);
   assert.match(renderSource, /preventDefault\(\)/);
   assert.match(renderSource, /stopPropagation\(\)/);
-  assert.match(renderSource, /speakVocabularyTerm\(/);
+  assert.match(renderSource, /pronunciationPlayer\.play\(/);
 });
 
 test("speakVocabularyTerm cancels prior speech and selects a local voice language", () => {
@@ -987,6 +974,10 @@ test("English speech automatically prefers local Samantha and otherwise keeps th
     selectPreferredSpeechVoice([defaultEnglish, samantha, chinese], "zh-CN"),
     chinese,
   );
+  const google = { name: "Google US English", lang: "en-US", localService: false };
+  const natural = { name: "Microsoft Aria Online (Natural)", lang: "en-US", localService: false };
+  assert.equal(selectPreferredSpeechVoice([samantha, google], "en-US"), google);
+  assert.equal(selectPreferredSpeechVoice([google, natural], "en-US"), natural);
 });
 
 test("speakVocabularyTerm uses the automatically selected local voice without changing rate or pitch", () => {
@@ -1072,6 +1063,140 @@ test("speakVocabularyTerm fails closed when local speech is unavailable or broke
   );
   assert.equal(cancelCount, 0);
   assert.equal(speakCount, 0);
+});
+
+test("Youdao audio URL accepts bounded English terms and encodes phrases", () => {
+  const { dictionaryAudioUrl } = loadVocabularyUiHelpers();
+  assert.equal(
+    dictionaryAudioUrl("  such   a mess ", "en"),
+    "https://dict.youdao.com/dictvoice?audio=such%20a%20mess&type=2",
+  );
+  assert.equal(dictionaryAudioUrl("I’m ready", "en"),
+    "https://dict.youdao.com/dictvoice?audio=I'm%20ready&type=2");
+  for (const term of ["https://example.com", "<script>", "中文", "", "a".repeat(241)]) {
+    assert.equal(dictionaryAudioUrl(term, "en"), null);
+  }
+  assert.equal(dictionaryAudioUrl("hello", "zh"), null);
+});
+
+test("dictionary pronunciation plays on click, cancels old audio, and falls back once", async () => {
+  const { createVocabularyPronunciationPlayer } = loadVocabularyUiHelpers();
+  const audios = [];
+  const spoken = [];
+  const timers = new Map();
+  let nextTimer = 0;
+  let canceled = 0;
+  class Utterance {
+    constructor(text) { this.text = text; }
+  }
+  const speech = {
+    cancel() { canceled += 1; },
+    speak(utterance) { spoken.push(utterance); },
+    getVoices: () => [],
+  };
+  const player = createVocabularyPronunciationPlayer(
+    (url) => {
+      const audio = {
+        url,
+        play() { return Promise.resolve(); },
+        pause() { this.paused = true; },
+        removeAttribute() {},
+        load() {},
+      };
+      audios.push(audio);
+      return audio;
+    },
+    speech,
+    Utterance,
+    (callback, ms) => {
+      assert.equal(ms, 5000);
+      timers.set(++nextTimer, callback);
+      return nextTimer;
+    },
+    (id) => timers.delete(id),
+  );
+  const first = [];
+  const second = [];
+  let pausedVideo = 0;
+  player.play("groceries", "en", "first", (state) => first.push(state), () => { pausedVideo += 1; });
+  assert.equal(pausedVideo, 1);
+  assert.equal(audios[0].url, "https://dict.youdao.com/dictvoice?audio=groceries&type=2");
+  assert.equal(audios[0].preload, "none");
+  assert.equal(audios[0].playbackRate, 1);
+  assert.equal(spoken.length, 0);
+  const staleEnd = audios[0].onended;
+
+  player.play("such a mess", "en", "second", (state) => second.push(state));
+  assert.equal(audios[0].paused, true);
+  assert.deepEqual(first, ["playing", "idle"]);
+  staleEnd();
+  player.stop("first");
+  assert.deepEqual(second, ["playing"]);
+
+  const failed = audios[1].onerror;
+  failed();
+  failed();
+  assert.equal(spoken.length, 1);
+  assert.equal(spoken[0].text, "such a mess");
+  assert.equal(spoken[0].lang, "en-US");
+  assert.equal(timers.size, 0);
+  assert.equal(canceled, 1);
+  player.stop("second");
+  assert.ok(canceled > 1);
+  assert.equal(second.at(-1), "idle");
+  await Promise.resolve();
+});
+
+test("non-English pronunciation skips Youdao and unavailable audio reports failure", async () => {
+  const { createVocabularyPronunciationPlayer } = loadVocabularyUiHelpers();
+  const spoken = [];
+  class Utterance {
+    constructor(text) { this.text = text; }
+  }
+  const speech = {
+    cancel() {},
+    speak(utterance) { spoken.push(utterance); },
+  };
+  let audioRequests = 0;
+  const player = createVocabularyPronunciationPlayer(() => { audioRequests += 1; }, speech, Utterance);
+  player.play("复利", "zh", "card", () => {});
+  assert.equal(audioRequests, 0);
+  assert.equal(spoken[0].lang, "zh-CN");
+
+  const states = [];
+  const failingPlayer = createVocabularyPronunciationPlayer(
+    () => ({
+      play: () => Promise.reject(new Error("audio unavailable")),
+      pause() {},
+      removeAttribute() {},
+      load() {},
+    }),
+    null,
+    null,
+  );
+  failingPlayer.play("hello", "en", "card", (state) => states.push(state));
+  await new Promise(setImmediate);
+  assert.deepEqual(states, ["playing", "error"]);
+});
+
+test("dictionary audio that never starts falls back after five seconds", () => {
+  const { createVocabularyPronunciationPlayer } = loadVocabularyUiHelpers();
+  const spoken = [];
+  let timeout;
+  class Utterance { constructor(text) { this.text = text; } }
+  const player = createVocabularyPronunciationPlayer(
+    () => ({ play: () => Promise.resolve(), pause() {}, removeAttribute() {}, load() {} }),
+    { cancel() {}, speak(utterance) { spoken.push(utterance); } },
+    Utterance,
+    (callback, ms) => { assert.equal(ms, 5000); timeout = callback; return 1; },
+    () => {},
+  );
+  player.play("hello", "en", "card", () => {});
+  assert.equal(spoken.length, 0);
+  timeout();
+  timeout();
+  assert.equal(spoken.length, 1);
+  assert.equal(spoken[0].text, "hello");
 });
 
 test("a rejected vocabulary save cleans its in-flight key without an unhandled finally chain", () => {

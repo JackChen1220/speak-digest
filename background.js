@@ -42,7 +42,7 @@ const debugLog = (...args) => {
 chrome.storage.local
   .setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
   .catch((error) =>
-    console.warn("[YouTube Digest] Could not restrict storage access:", error),
+    console.warn("[Speak Digest] Could not restrict storage access:", error),
   );
 
 async function getSettings() {
@@ -95,7 +95,7 @@ async function requestAiCompletion({
   const settings = await getSettings();
   if (!settings.aiApiKey) {
     const error = new Error(
-      "DeepSeek API key not configured. Open YouTube Digest Settings.",
+      "DeepSeek API key not configured. Open Speak Digest Settings.",
     );
     error.code = "NO_AI_KEY";
     throw error;
@@ -270,7 +270,7 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
  * Keep the side panel scoped to YouTube tabs only.
  *
  * Chrome side panels are "global" by default: once opened, the panel follows
- * you to every tab. To make YouTube Digest behave like a YouTube-only tool, we
+ * you to every tab. To make Speak Digest behave like a YouTube-only tool, we
  * enable the panel on YouTube tabs and disable it everywhere else. Disabling
  * on a tab makes Chrome hide/close the panel for that tab, so it never lingers
  * on a new tab or some other website.
@@ -346,6 +346,74 @@ function getNavigationUrl(changeInfo, tab) {
     return "";
   }
   return tab?.pendingUrl || tab?.url || "";
+}
+
+const pendingContentScriptInjections = new Map();
+
+function isMissingContentReceiver(error) {
+  return /Receiving end does not exist/i.test(String(error?.message || ""));
+}
+
+function contentScriptUnavailable() {
+  const error = new Error(
+    "Refresh the YouTube tab to reconnect Speak Digest.",
+  );
+  error.code = "CONTENT_SCRIPT_UNAVAILABLE";
+  return error;
+}
+
+async function isSameActiveYouTubeTab(tab) {
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  return (
+    activeTab?.id === tab.id &&
+    activeTab.url === tab.url &&
+    isYouTubeTabUrl(activeTab.url)
+  );
+}
+
+async function reconnectContentScript(tab) {
+  if (!(await isSameActiveYouTubeTab(tab))) throw contentScriptUnavailable();
+
+  let injection = pendingContentScriptInjections.get(tab.id);
+  if (!injection) {
+    injection = chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["content.js"],
+    });
+    pendingContentScriptInjections.set(tab.id, injection);
+  }
+
+  try {
+    await injection;
+  } catch (error) {
+    debugLog("[Speak Digest BG] Content script reinjection failed:", error);
+    throw contentScriptUnavailable();
+  } finally {
+    if (pendingContentScriptInjections.get(tab.id) === injection) {
+      pendingContentScriptInjections.delete(tab.id);
+    }
+  }
+
+  if (!(await isSameActiveYouTubeTab(tab))) throw contentScriptUnavailable();
+}
+
+async function sendToContentScript(tab, payload) {
+  try {
+    return await chrome.tabs.sendMessage(tab.id, payload);
+  } catch (error) {
+    if (!isMissingContentReceiver(error)) throw error;
+  }
+
+  await reconnectContentScript(tab);
+  try {
+    return await chrome.tabs.sendMessage(tab.id, payload);
+  } catch (error) {
+    if (isMissingContentReceiver(error)) throw contentScriptUnavailable();
+    throw error;
+  }
 }
 
 // Reconcile at both navigation start and completion because Chrome can reset
@@ -538,7 +606,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === "openSidePanel") {
     const tabId = sender.tab?.id;
-    debugLog("[YouTube Digest BG] openSidePanel requested from tab:", tabId);
+    debugLog("[Speak Digest BG] openSidePanel requested from tab:", tabId);
 
     // Re-enable the panel (it may have been disabled by auto-close) and open it.
     // IMPORTANT: we call setOptions + open synchronously (no await between them)
@@ -561,7 +629,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }, 300);
         })
         .catch((err) => {
-          console.error("[YouTube Digest BG] openSidePanel error:", err);
+          console.error("[Speak Digest BG] openSidePanel error:", err);
         });
     } else {
       // Fallback: find the active tab
@@ -576,7 +644,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             chrome.sidePanel.open({ tabId: tabs[0].id }).catch((err) => {
               console.error(
-                "[YouTube Digest BG] openSidePanel fallback error:",
+                "[Speak Digest BG] openSidePanel fallback error:",
                 err,
               );
             });
@@ -590,7 +658,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Relay messages from side panel to content script
   if (message.action === "relayToContent") {
-    debugLog("[YouTube Digest BG] Relay request:", message.payload?.action);
+    debugLog("[Speak Digest BG] Relay request:", message.payload?.action);
     (async () => {
       try {
         const tabs = await chrome.tabs.query({
@@ -598,22 +666,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           lastFocusedWindow: true,
         });
         debugLog(
-          "[YouTube Digest BG] Active tab in last focused window:",
+          "[Speak Digest BG] Active tab in last focused window:",
           tabs.length,
           tabs[0]?.url,
         );
 
         if (tabs[0] && isYouTubeTabUrl(tabs[0].url)) {
           debugLog(
-            "[YouTube Digest BG] Sending to tab:",
+            "[Speak Digest BG] Sending to tab:",
             tabs[0].id,
             "URL:",
             tabs[0].url,
           );
-          let response = await chrome.tabs.sendMessage(
-            tabs[0].id,
-            message.payload,
-          );
+          let response = await sendToContentScript(tabs[0], message.payload);
 
           // For getVideoInfo, PREFER YouTube's own player data over the
           // DOM scrape. The player's videoDetails is canonical: its `author`
@@ -637,18 +702,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
           }
 
-          debugLog("[YouTube Digest BG] Got response from content:", response);
+          debugLog("[Speak Digest BG] Got response from content:", response);
           sendResponse({ success: true, response });
         } else {
-          debugLog("[YouTube Digest BG] No active YouTube tab found");
+          debugLog("[Speak Digest BG] No active YouTube tab found");
           sendResponse({
             success: false,
             error: "No active YouTube tab found",
           });
         }
       } catch (err) {
-        console.error("[YouTube Digest BG] Relay error:", err.message);
-        sendResponse({ success: false, error: err.message });
+        if (err.code !== "CONTENT_SCRIPT_UNAVAILABLE") {
+          console.error("[Speak Digest BG] Relay error:", err.message);
+        }
+        sendResponse({ success: false, error: err.message, code: err.code });
       }
     })();
     return true; // Keep channel open for async response
@@ -689,7 +756,7 @@ async function getPlayerVideoDetails(tabId) {
     });
     return results?.[0]?.result || null;
   } catch (e) {
-    console.warn("[YouTube Digest BG] Player details unavailable:", e.message);
+    console.warn("[Speak Digest BG] Player details unavailable:", e.message);
     return null;
   }
 }
@@ -792,7 +859,7 @@ async function handleFetchTranscript(videoId, mode = "native") {
       return {
         success: false,
         error: "NO_SUPADATA_KEY",
-        message: "Supadata API key not configured. Open YouTube Digest Settings.",
+        message: "Supadata API key not configured. Open Speak Digest Settings.",
       };
     }
 
@@ -840,7 +907,7 @@ async function handleFetchTranscript(videoId, mode = "native") {
         return {
           success: false,
           error: "INVALID_SUPADATA_KEY",
-          message: "Your Supadata API key is invalid. Open YouTube Digest Settings.",
+          message: "Your Supadata API key is invalid. Open Speak Digest Settings.",
         };
       }
       if (response.status === 404) {
@@ -1082,7 +1149,7 @@ async function handleAnalyzeTranscript(
       return {
         success: false,
         error: "NO_AI_KEY",
-        message: "DeepSeek API key not configured. Open YouTube Digest Settings.",
+        message: "DeepSeek API key not configured. Open Speak Digest Settings.",
       };
     }
 
@@ -1136,7 +1203,7 @@ async function handleAnalyzeTranscript(
       promptVariables,
     );
 
-    debugLog("[YouTube Digest] Requesting video analysis", settings.aiModel);
+    debugLog("[Speak Digest] Requesting video analysis", settings.aiModel);
     const { text: responseText } = await requestAiCompletion({
       maxTokens: 8192,
       responseFormat: { type: "json_object" },
@@ -1348,7 +1415,7 @@ async function handleSaveOverviewNote(message) {
     chrome.runtime.sendMessage({ action: "noteSaved", note }).catch(() => {});
     return { success: true, note };
   } catch (error) {
-    console.error("[YouTube Digest] Save Overview note error:", error);
+    console.error("[Speak Digest] Save Overview note error:", error);
     return { success: false, error: error.message };
   }
 }
@@ -1376,10 +1443,10 @@ async function handleSaveNote(
       const cached = await chrome.storage.local.get(`digest_${videoId}`);
       if (cached[`digest_${videoId}`]?.transcript) {
         transcript = cached[`digest_${videoId}`].transcript;
-        debugLog("[YouTube Digest] Using cached transcript for note");
+        debugLog("[Speak Digest] Using cached transcript for note");
       }
     } catch (e) {
-      debugLog("[YouTube Digest] No cached transcript, fetching...");
+      debugLog("[Speak Digest] No cached transcript, fetching...");
     }
 
     // If no cached transcript, fetch it
@@ -1501,7 +1568,7 @@ async function handleSaveNote(
 
     return { success: true, note };
   } catch (error) {
-    console.error("[YouTube Digest] Save note error:", error);
+    console.error("[Speak Digest] Save note error:", error);
     return { success: false, error: error.message };
   }
 }
@@ -1524,7 +1591,7 @@ async function cleanupNoteText(
   }
 
   try {
-    debugLog("[YouTube Digest] Requesting note cleanup");
+    debugLog("[Speak Digest] Requesting note cleanup");
     const variables = {
       videoTitle: videoTitle || "Unknown",
       fullContext,
@@ -1561,7 +1628,7 @@ async function cleanupNoteText(
       }
     } catch (parseError) {
       console.warn(
-        "[YouTube Digest] JSON parse failed for note, stripping preambles:",
+        "[Speak Digest] JSON parse failed for note, stripping preambles:",
         parseError,
       );
       result = result.replace(
@@ -1579,7 +1646,7 @@ async function cleanupNoteText(
 
     return result.slice(0, 3000);
   } catch (e) {
-    console.error("[YouTube Digest] Cleanup error:", e);
+    console.error("[Speak Digest] Cleanup error:", e);
   }
 
   // Return combined raw text if cleanup fails
@@ -2124,7 +2191,7 @@ async function handleExplainSelection(
       variables,
     );
 
-    debugLog("[YouTube Digest] Requesting selection explanation");
+    debugLog("[Speak Digest] Requesting selection explanation");
     const { text: explanation } = await requestAiCompletion({
       maxTokens: 1024,
       messages: [
@@ -2965,7 +3032,7 @@ async function handleTranslateContent(
     }
     return { success: true, translatedContent: aligned };
   } catch (error) {
-    console.error("[YouTube Digest] Translation error:", error);
+    console.error("[Speak Digest] Translation error:", error);
     return { success: false, error: error.message || "Translation failed" };
   }
 }

@@ -90,7 +90,7 @@ function tryInjectNoteButton() {
 
     if (attempts >= maxAttempts) {
       debugLog(
-        "[YouTube Digest Content] Player container not found after retries, giving up",
+        "[Speak Digest Content] Player container not found after retries, giving up",
       );
       if (ytdNoteButtonRetryTimer) {
         clearInterval(ytdNoteButtonRetryTimer);
@@ -122,12 +122,12 @@ if (document.readyState === "loading") {
  * When they send key moments, we highlight them on the progress bar.
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  debugLog("[YouTube Digest Content] Received message:", message.action, message);
+  debugLog("[Speak Digest Content] Received message:", message.action, message);
 
   if (message.action === "getVideoInfo") {
     // Read video title and channel name from the page
     const info = extractVideoInfo();
-    debugLog("[YouTube Digest Content] Returning video info:", info);
+    debugLog("[Speak Digest Content] Returning video info:", info);
     sendResponse(info);
     return false; // Synchronous response
   }
@@ -148,9 +148,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.action === "pauseVideo") {
+    const video = document.querySelector("video.html5-main-video");
+    if (video && !video.paused) video.pause();
+    sendResponse({ success: Boolean(video) });
+    return false;
+  }
+
   if (message.action === "seekTo") {
     // Jump the video to a specific timestamp
-    debugLog("[YouTube Digest Content] Seeking to:", message.seconds);
+    debugLog("[Speak Digest Content] Seeking to:", message.seconds);
     seekToTimestamp(message.seconds);
     sendResponse({ success: true });
     return false;
@@ -164,7 +171,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // Unknown action - still send a response to prevent hanging
-  debugLog("[YouTube Digest Content] Unknown action:", message.action);
+  debugLog("[Speak Digest Content] Unknown action:", message.action);
   sendResponse({ success: false, error: "Unknown action" });
   return false;
 });
@@ -177,7 +184,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * Injects a "Digest" button into YouTube's action bar.
  * The button appears next to Share, Save, etc. below the video.
  *
- * When clicked, it opens the YouTube Digest side panel.
+ * When clicked, it opens the Speak Digest side panel.
  */
 function isVisibleDigestHost(element) {
   if (!element || !element.isConnected) return false;
@@ -232,13 +239,13 @@ function createDigestButton() {
   let requiresPageReload = false;
   digestButton.id = "ytd-digest-button";
   digestButton.type = "button";
-  digestButton.setAttribute("aria-label", "Open YouTube Digest");
+  digestButton.setAttribute("aria-label", "Open Speak Digest");
   digestButton.innerHTML = `
-    <span class="ytd-digest-icon" style="font-size: 11px;">▶</span>
-    <span class="ytd-digest-label">Digest</span>
+    <svg class="ytd-digest-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9v6M8 6v12M12 4v16M16 7v10M20 10v4" /></svg>
+    <span class="ytd-digest-label">Speak Digest</span>
   `;
 
-  // Style the button — rounded pill in our terracotta accent, sized to sit
+  // Style the button in the Speak Digest accent, sized to sit
   // comfortably among YouTube's native action buttons.
   digestButton.style.cssText = `
     display: inline-flex;
@@ -247,8 +254,8 @@ function createDigestButton() {
     padding: 0 18px;
     height: 36px;
     border: none;
-    border-radius: 18px;
-    background: #c8674f;
+    border-radius: 8px;
+    background: #6447eb;
     color: white;
     font-family: "Roboto", "Arial", sans-serif;
     font-size: 14px;
@@ -256,7 +263,7 @@ function createDigestButton() {
     cursor: pointer;
     margin-right: 8px;
     transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
-    box-shadow: 0 2px 8px rgba(200, 103, 79, 0.3);
+    box-shadow: 0 2px 8px rgba(100, 71, 235, 0.18);
     flex: 0 0 auto;
     align-self: center;
     width: max-content;
@@ -267,12 +274,12 @@ function createDigestButton() {
 
   // Hover effects
   digestButton.addEventListener("mouseenter", () => {
-    digestButton.style.background = "#b25742";
+    digestButton.style.background = "#5134d5";
     digestButton.style.transform = "scale(1.02)";
   });
 
   digestButton.addEventListener("mouseleave", () => {
-    digestButton.style.background = "#c8674f";
+    digestButton.style.background = "#6447eb";
     digestButton.style.transform = "scale(1)";
   });
 
@@ -286,22 +293,22 @@ function createDigestButton() {
       return;
     }
 
-    debugLog("[YouTube Digest] Digest button clicked");
+    debugLog("[Speak Digest] Digest button clicked");
 
     // Send message to background script to open side panel
     try {
       const result = await chrome.runtime.sendMessage({
         action: "openSidePanel",
       });
-      debugLog("[YouTube Digest] openSidePanel response:", result);
+      debugLog("[Speak Digest] openSidePanel response:", result);
     } catch (err) {
-      console.error("[YouTube Digest] Failed to open side panel:", err);
+      console.error("[Speak Digest] Failed to open side panel:", err);
       const errorMessage = String(err?.message || err);
       if (/Extension context invalidated/i.test(errorMessage)) {
         requiresPageReload = true;
         digestButton.setAttribute(
           "aria-label",
-          "Refresh YouTube to reconnect YouTube Digest",
+          "Refresh YouTube to reconnect Speak Digest",
         );
         digestButton.title = "The extension was updated. Refresh this page to reconnect.";
         digestButton.innerHTML = `
@@ -334,7 +341,7 @@ function injectDigestButton() {
 
   const actionsContainer = findDigestButtonHost();
   if (!actionsContainer) {
-    debugLog("[YouTube Digest Content] Visible actions container not found yet");
+    debugLog("[Speak Digest Content] Visible actions container not found yet");
     return false;
   }
 
@@ -360,7 +367,7 @@ function injectDigestButton() {
     actionsContainer.insertBefore(digestButton, actionsContainer.firstChild);
   }
 
-  debugLog("[YouTube Digest Content] Digest button reconciled");
+  debugLog("[Speak Digest Content] Digest button reconciled");
   return true;
 }
 
@@ -442,7 +449,7 @@ function injectNoteButton() {
 
   if (!playerContainer) {
     debugLog(
-      "[YouTube Digest Content] Player container not found yet, will retry",
+      "[Speak Digest Content] Player container not found yet, will retry",
     );
     return;
   }
@@ -455,7 +462,7 @@ function injectNoteButton() {
     playerContainer.style.position = "relative";
   }
 
-  debugLog("[YouTube Digest Content] Injecting note button");
+  debugLog("[Speak Digest Content] Injecting note button");
 
   // Create the note button — a soft rounded pill that floats over the player
   const noteButton = document.createElement("button");
@@ -468,7 +475,7 @@ function injectNoteButton() {
     <span>Note</span>
   `;
 
-  // Soft rounded pill in the terracotta accent, with a gentle shadow.
+  // Purple action control on the video player.
   // Start hidden; visibility is controlled by mouse activity.
   noteButton.style.cssText = `
     position: absolute;
@@ -478,10 +485,10 @@ function injectNoteButton() {
     display: flex;
     align-items: center;
     padding: 9px 16px;
-    background: #c8674f;
+    background: #6447eb;
     color: white;
     border: none;
-    border-radius: 999px;
+    border-radius: 8px;
     font-family: system-ui, -apple-system, "Roboto", sans-serif;
     font-size: 13px;
     font-weight: 600;
@@ -515,13 +522,13 @@ function injectNoteButton() {
 
   // Hover effect — lift slightly
   noteButton.addEventListener("mouseenter", () => {
-    noteButton.style.background = "#b25742";
+    noteButton.style.background = "#5134d5";
     noteButton.style.boxShadow = "0 6px 18px rgba(0,0,0,0.35)";
     noteButton.style.transform = "translateY(-1px)";
   });
 
   noteButton.addEventListener("mouseleave", () => {
-    noteButton.style.background = "#c8674f";
+    noteButton.style.background = "#6447eb";
     noteButton.style.boxShadow = "0 4px 14px rgba(0,0,0,0.3)";
     noteButton.style.transform = "translateY(0)";
   });
@@ -535,7 +542,7 @@ function injectNoteButton() {
 
   playerContainer.appendChild(noteButton);
 
-  debugLog("[YouTube Digest Content] Note button injected");
+  debugLog("[Speak Digest Content] Note button injected");
 }
 
 function showNoteButton() {
@@ -591,11 +598,11 @@ function handleNoteKeyboardShortcut(e) {
  * Captures the current timestamp and saves it as a note.
  */
 async function saveCurrentNote() {
-  debugLog("[YouTube Digest] Saving note");
+  debugLog("[Speak Digest] Saving note");
 
   const video = document.querySelector("video.html5-main-video");
   if (!video) {
-    console.error("[YouTube Digest] No video element found");
+    console.error("[Speak Digest] No video element found");
     return;
   }
 
@@ -634,20 +641,20 @@ async function saveCurrentNote() {
         noteButton.innerHTML =
           '<span style="letter-spacing: 0.2px;">ERROR</span>';
       }
-      console.error("[YouTube Digest] Save note error:", result.error);
+      console.error("[Speak Digest] Save note error:", result.error);
     }
   } catch (err) {
     if (noteButton) {
       noteButton.innerHTML =
         '<span style="letter-spacing: 0.2px;">ERROR</span>';
     }
-    console.error("[YouTube Digest] Save note exception:", err);
+    console.error("[Speak Digest] Save note exception:", err);
   }
 
   setTimeout(() => {
     if (noteButton) {
       noteButton.innerHTML = originalContent;
-      noteButton.style.background = "#c8674f";
+      noteButton.style.background = "#6447eb";
       noteButton.style.pointerEvents = "auto";
     }
   }, 2000);
@@ -664,11 +671,11 @@ function showNoteSavedToast(note) {
   const toast = document.createElement("div");
   toast.id = "ytd-note-toast";
   toast.innerHTML = `
-    <div style="font-weight: 700; margin-bottom: 6px; color: #c8674f;">📝 Note saved</div>
+    <div style="font-weight: 700; margin-bottom: 6px; color: #6447eb;">📝 Note saved</div>
     <div style="font-size: 12px; color: #6b6258; margin-bottom: 8px;">${escapeHtmlForContent(note.timestamp)} — ${escapeHtmlForContent(note.videoTitle)}</div>
     <div style="font-size: 13px; line-height: 1.55; color: #2e2a24;">"${escapeHtmlForContent(note.text)}"</div>
     <div style="margin-top: 10px; font-size: 11px;">
-      <a href="${escapeHtmlForContent(note.timestampedUrl)}" style="color: #c8674f; font-weight: 600; text-decoration: none;">🔗 Copy link</a>
+      <a href="${escapeHtmlForContent(note.timestampedUrl)}" style="color: #6447eb; font-weight: 600; text-decoration: none;">🔗 Copy link</a>
     </div>
   `;
 
@@ -791,11 +798,11 @@ function highlightKeyMoments(moments, videoDuration) {
 function seekToTimestamp(seconds) {
   const video = document.querySelector("video.html5-main-video");
   if (!video) {
-    console.error("[YouTube Digest Content] No video element found for seek");
+    console.error("[Speak Digest Content] No video element found for seek");
     return;
   }
 
-  debugLog("[YouTube Digest Content] Seeking to:", seconds);
+  debugLog("[Speak Digest Content] Seeking to:", seconds);
   video.currentTime = seconds;
   // Also play the video if it's paused
   if (video.paused) {

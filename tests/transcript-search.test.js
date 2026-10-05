@@ -396,9 +396,9 @@ test("Transcript search resets on video changes and never seeks or calls a provi
 });
 
 test("Transcript search highlight visually wins inside Vocabulary highlight", () => {
-  assert.match(styles, /\.transcript-search-highlight\s*\{[^}]*background:\s*#ffb000;/);
+  assert.match(styles, /\.transcript-search-highlight\s*\{[^}]*background:\s*#ffd34e;/);
   assert.match(
     styles,
-    /\.vocabulary-highlight \.transcript-search-highlight\s*\{[^}]*background:\s*#ffb000;/,
+    /\.vocabulary-highlight \.transcript-search-highlight\s*\{[^}]*background:\s*#ffd34e;/,
   );
 });

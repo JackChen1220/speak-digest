@@ -1,12 +1,12 @@
 :root {
   color-scheme: light;
-  --bg: #f7f3ec;
+  --bg: #fffaf6;
   --surface: #ffffff;
-  --border: #e7dfd2;
-  --text: #2e2a24;
-  --muted: #6b6258;
-  --accent: #c8674f;
-  --accent-hover: #ad523e;
+  --border: #e8e2ef;
+  --text: #252333;
+  --muted: #716684;
+  --accent: #6447eb;
+  --accent-hover: #5134d5;
   --danger: #9f2d2d;
 }
 
@@ -61,9 +61,9 @@ h1 {
   margin: 18px 0;
   padding: 24px;
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 24px;
   background: var(--surface);
-  box-shadow: 0 10px 30px rgba(46, 42, 36, 0.05);
+  box-shadow: none;
 }
 
 h2 {
@@ -96,7 +96,7 @@ textarea {
 input:focus,
 textarea:focus {
   border-color: var(--accent);
-  outline: 3px solid rgba(200, 103, 79, 0.14);
+  outline: 3px solid rgba(100, 71, 235, 0.14);
 }
 
 textarea {
@@ -120,8 +120,8 @@ a {
   margin-top: 18px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: #f8eee9;
-  color: #60483f;
+  background: #f6f2fc;
+  color: #716684;
   font-size: 13px;
 }
 
@@ -137,9 +137,9 @@ a {
   justify-content: space-between;
   margin-bottom: 18px;
   padding: 13px 14px;
-  border: 1px solid #ecd8ce;
+  border: 1px solid #e8e2ef;
   border-radius: 12px;
-  background: #fdf6f2;
+  background: #f6f2fc;
 }
 
 .provider-name {
@@ -150,16 +150,16 @@ a {
 .agent-badge {
   padding: 4px 9px;
   border-radius: 999px;
-  background: #f2e3dc;
-  color: #714b3f;
+  background: #eee8ff;
+  color: #5134d5;
   font-size: 11px;
   font-weight: 800;
 }
 
 .customization-card {
   padding: 0;
-  border-color: #ddc2b7;
-  background: linear-gradient(145deg, #fff 0%, #fff9f6 100%);
+  border-color: #e8e2ef;
+  background: #ffffff;
   overflow: hidden;
 }
 
@@ -194,11 +194,11 @@ a {
 }
 
 .customization-summary:hover {
-  background: #fdf3ee;
+  background: #f6f2fc;
 }
 
 .customization-summary:focus-visible {
-  outline: 3px solid rgba(200, 103, 79, 0.28);
+  outline: 3px solid rgba(100, 71, 235, 0.28);
   outline-offset: -3px;
 }
 
@@ -221,7 +221,7 @@ a {
 
 .customization-content {
   padding: 19px 22px 22px;
-  border-top: 1px solid #ead8d0;
+  border-top: 1px solid #e8e2ef;
 }
 
 .customization-copy {
@@ -249,7 +249,7 @@ a {
 button {
   padding: 10px 15px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   background: #fff;
   color: var(--text);
   cursor: pointer;
@@ -323,4 +323,36 @@ footer {
   .customization-content {
     padding: 17px;
   }
+}
+
+/* Speak Replay form details */
+.settings-shell { width: min(800px, calc(100% - 32px)); }
+header { margin-bottom: 32px; }
+h1 { color: var(--text); }
+h2 { font-size: 19px; letter-spacing: -0.025em; }
+.card { margin: 16px 0; padding: 26px; }
+input, textarea { border-radius: 8px; }
+input { min-height: 44px; }
+input::placeholder { color: #91899d; }
+button { min-height: 40px; border-radius: 8px; }
+button.primary, .provider-badge { background: var(--accent); color: white; }
+.provider-summary { border-radius: 10px; }
+.provider-badge, .agent-badge { border-radius: 999px; }
+.customization-card { padding: 0; }
+.customization-summary { border-radius: 23px; }
+.customization-card[open] .customization-summary { border-radius: 23px 23px 0 0; }
+.customization-title { font-size: 18px; }
+.data-card { margin-top: 32px; }
+button.danger { border-color: #e9c9c9; background: #fffafa; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+@media (max-width: 620px) {
+  .card { padding: 20px; border-radius: 20px; }
+  .customization-card { padding: 0; }
+  .settings-shell { padding-bottom: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }

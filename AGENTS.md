@@ -1,6 +1,6 @@
 # Project Guide
 
-YouTube Digest is a Manifest V3 Chrome extension built with plain HTML, CSS, and JavaScript. There is no compile or bundle step.
+Speak Digest is a Manifest V3 Chrome extension built with plain HTML, CSS, and JavaScript. There is no compile or bundle step.
 
 ## Source map
 
@@ -25,7 +25,7 @@ YouTube Digest is a Manifest V3 Chrome extension built with plain HTML, CSS, and
 - Keep Transcript search literal and bounded. Clearing or refreshing search must preserve Vocabulary highlights and must not seek video playback.
 - Store Transcript reading position only in `chrome.storage.session`, keep at most 20 recent videos, and never restore a stale position into another video.
 - Resolve panel content from the active YouTube tab only. Never fall back to a background YouTube tab.
-- Vocabulary pronunciation uses a local Chrome or system voice and sends or stores no audio. Do not add a remote speech service without updating permissions, privacy, docs, and tests.
+- Vocabulary pronunciation requests Youdao dictionary audio only after a user clicks an English term, then falls back to browser speech on failure. Non-English terms use browser speech. Keep the Youdao host permission, privacy disclosure, docs, and tests aligned; do not prefetch or store audio.
 - Treat provider output as untrusted: validate expected JSON shapes and escape rendered text.
 - Validate Tavily source URLs and bound transcript, Ask history, web result, storage, and rendered-content sizes.
 - Keep the bring-your-own-key model. Never add real secrets to source, fixtures, prompts, logs, or packages.

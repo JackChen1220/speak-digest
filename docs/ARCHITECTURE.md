@@ -21,9 +21,13 @@ Ask answers follow the language of the user's question. Conversation history exi
 
 Transcript search is local, literal, case-insensitive where appropriate, and bounded to a 200-character query. It navigates previous and next matches with wraparound, pauses auto-follow when the user moves to a match, and never seeks video playback. Search marks are separate from Vocabulary marks, so clearing or reapplying search preserves saved Vocabulary highlighting.
 
+Transcript Copy and Export use the selected Original, Chinese, or bilingual mode. Chinese and bilingual output is built from the semantic segments and their cached translations in source order. On request, the existing translation queue finishes offscreen segments before output; missing translations prevent a partial copy or download. Changing the video or language cancels a pending output action. Original export keeps its previous plain-text body, while bilingual output pairs each original segment with its Chinese translation.
+
 The side panel saves only `scrollTop` and an update time in Chrome `storage.session`, keyed by video ID. It retains at most 20 recent video positions and removes them automatically when the browser session ends. Restore happens only after the matching video's Transcript has rendered; stale video snapshots are ignored.
 
 Both the background relay and the side panel resolve the active YouTube tab only. If that active tab is not a supported watch page, the panel closes or disables instead of selecting a background YouTube tab.
+
+If the active YouTube tab has no content-script message receiver, the relay injects the existing `content.js` into that exact tab and retries once. It checks that the same URL and tab remain active before and after injection. If reconnection still fails, the panel asks the user to refresh the YouTube tab and offers a connection retry.
 
 ## Explain data flow
 
@@ -67,11 +71,11 @@ Saving a new selection performs a duplicate check before any AI call. Latin text
 
 A new background action uses a dedicated structured prompt to produce a concise Chinese meaning, contextual explanation, and optional phonetic notation. Short Latin words and phrases use IPA; short Chinese entries use pinyin. Longer sentences omit phonetic notation rather than displaying an unreadable transcription. Provider JSON is validated and length-bounded before storage. Existing records without phonetic notation remain valid. The collection accepts at most 500 entries and returns a clear capacity error instead of silently deleting learning data.
 
-Vocabulary cards show the saved text, optional phonetic notation, a pronunciation button, Chinese meaning/explanation, source excerpt, video and timestamp link, and delete action. This Video filters by current video ID; All Vocabulary shows the global collection. Pronunciation uses Chrome's local `speechSynthesis`: English/Latin entries request `en-US` and automatically prefer an installed local Samantha `en-US` voice, with a case-insensitive name match. If Samantha is unavailable, the existing automatic voice ranking is used. Chinese entries request `zh-CN`, other languages keep automatic selection, and starting a new pronunciation cancels the previous utterance. No voice preference or audio is uploaded, downloaded, stored, or exposed. If speech synthesis is unavailable, the control is disabled with a clear label.
+Vocabulary cards show the saved text, optional phonetic notation, a pronunciation button, Chinese meaning/explanation, source excerpt, video and timestamp link, and delete action. This Video filters by current video ID; All Vocabulary shows the global collection. For English/Latin entries, pronunciation requests `https://dict.youdao.com/dictvoice` American audio only after a click. A load or playback failure falls back once to browser `speechSynthesis`, preferring American Natural, Google, then local Samantha voices. Non-English entries use browser speech directly. Starting another pronunciation, changing cards or video, leaving Library, or closing the panel cancels the current readout. The selected English term is sent to Youdao; no audio is prefetched or stored. Browser speech voices may be online. If neither playback path is available, the control shows a clear unavailable label.
 
 The side panel loads normalized vocabulary terms before rendering Transcript. It reapplies highlighting after original or translated transcript content is rendered. Latin single words match whole words case-insensitively. Latin phrases, sentences, and CJK entries use normalized exact matching inside a displayed semantic segment. No stemming, fuzzy matching, or cross-segment matching is performed in this version.
 
-Highlighting operates on rendered text nodes after all provider content has been escaped, preserves allowlisted subtitle formatting, applies longer terms first, and never builds executable HTML or regular expressions from saved text. Saved matches use a high-saturation bright-yellow background with dark text for clear scanning.
+Highlighting operates on rendered text nodes after all provider content has been escaped, preserves allowlisted subtitle formatting, applies longer terms first, and never builds executable HTML or regular expressions from saved text. Saved matches use a purple underline; Transcript search matches use yellow for distinction.
 
 ## Security, privacy, and failure behavior
 
@@ -94,7 +98,7 @@ Release tests cover:
 - Ask question/history limits, role validation, long-transcript context reduction, timestamp grounding, suggestion JSON validation, and fallback behavior.
 - Tavily request shape, optional configuration, result and URL validation, no calls when Web is off, and labelled degradation when search fails.
 - Vocabulary normalization, global duplicate prevention before AI calls, schema validation, capacity behavior, filters, deletion, and exact safe highlighting.
-- Phonetic validation, backward compatibility for older entries, and local speech synthesis language/cancel/failure behavior.
+- Phonetic validation, backward compatibility for older entries, and Youdao audio URL, fallback, cancellation, and browser speech behavior.
 - Prompt files, host permissions, privacy copy, release allowlist, secret scanning, and packaging.
 
 No automated test may call DeepSeek, Supadata, or Tavily with a live key.

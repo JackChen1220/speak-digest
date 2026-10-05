@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>YouTube Digest Settings</title>
+    <title>Speak Digest Settings</title>
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <main class="settings-shell">
       <header>
-        <div class="eyebrow">YouTube Digest</div>
+        <div class="eyebrow">Speak Digest</div>
         <h1>Bring your own API keys</h1>
         <p class="lede">
           Keys stay in this Chrome profile and are sent only to Supadata,
@@ -58,7 +58,7 @@
             placeholder="Paste your DeepSeek key"
           />
           <p class="help">
-            YouTube Digest uses DeepSeek V4 Flash for overviews,
+            Speak Digest uses DeepSeek V4 Flash for overviews,
             explanations, translation, and note polishing.
             <a
               href="https://platform.deepseek.com/api_keys"
@@ -119,7 +119,7 @@
           <p class="help customization-copy">
             This published version supports DeepSeek V4 Flash. You can adapt
             your own local copy with a coding agent. Before copying, open the
-            exact YouTube Digest project folder that Chrome loaded through
+            exact Speak Digest project folder that Chrome loaded through
             Load unpacked in your coding agent. Then expand this section and
             copy the prompt. For a first-time installation, optional permanent
             locations include <code>~/Documents/youtube-digest</code> on macOS
@@ -131,7 +131,7 @@
             code is ready.
           </p>
           <label for="customizationPrompt">Safe customization prompt</label>
-          <textarea id="customizationPrompt" readonly rows="12">Customize my local copy of YouTube Digest to use [PROVIDER] with [MODEL]. Work only in the currently open workspace. Before editing anything, verify that this workspace contains manifest.json and that its name is YouTube Digest. If verification fails, stop and tell me: "Open the exact YouTube Digest project folder that Chrome loaded through Load unpacked in your coding agent, then paste this prompt again." Do not search other folders or the whole disk, edit a guessed copy, assume an installation path, or claim that Chrome or the extension can reveal the absolute OS source path. Update the API endpoint, request format, and minimum Chrome host permissions needed for that provider. Preserve the bring-your-own-key model and local Chrome storage. Keep all API keys out of source code, commits, logs, screenshots, and this chat; after the code is ready, tell me where I should enter the key myself. Keep DeepSeek-specific fields and retries provider-scoped, update README.md, README.zh-CN.md, PRIVACY.md, SECURITY.md, and the tests, then run npm test, npm run check, and npm run package. Finally, explain how to reload the unpacked extension and test it on a real YouTube video.</textarea>
+          <textarea id="customizationPrompt" readonly rows="12">Customize my local copy of Speak Digest to use [PROVIDER] with [MODEL]. Work only in the currently open workspace. Before editing anything, verify that this workspace contains manifest.json and that its name is Speak Digest. If verification fails, stop and tell me: "Open the exact Speak Digest project folder that Chrome loaded through Load unpacked in your coding agent, then paste this prompt again." Do not search other folders or the whole disk, edit a guessed copy, assume an installation path, or claim that Chrome or the extension can reveal the absolute OS source path. Update the API endpoint, request format, and minimum Chrome host permissions needed for that provider. Preserve the bring-your-own-key model and local Chrome storage. Keep all API keys out of source code, commits, logs, screenshots, and this chat; after the code is ready, tell me where I should enter the key myself. Keep DeepSeek-specific fields and retries provider-scoped, update README.md, README.zh-CN.md, PRIVACY.md, SECURITY.md, and the tests, then run npm test, npm run check, and npm run package. Finally, explain how to reload the unpacked extension and test it on a real YouTube video.</textarea>
           <div class="copy-actions">
             <button id="copyCustomizationPromptBtn" type="button">
               Copy customization prompt

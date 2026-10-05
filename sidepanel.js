@@ -1,7 +1,7 @@
 /**
  * SIDE PANEL LOGIC
  *
- * Handles the UI for YouTube Digest: video detection, transcript analysis,
+ * Handles the UI for Speak Digest: video detection, transcript analysis,
  * rendering results, and export features.
  */
 
@@ -39,6 +39,7 @@ let closeActiveExplanationModal = null;
 // The public transcript control intentionally supports only the original
 // subtitles, Chinese, and an aligned source + Chinese view.
 let currentTranscriptMode = "original";
+let transcriptTextActionInProgress = false;
 let currentOverviewMode = "original";
 let translationGeneration = 0; // Invalidates responses from older UI modes/videos.
 let translationWorkCount = 0;
@@ -54,6 +55,7 @@ const TRANSLATION_MESSAGE_TIMEOUT_MS = 130_000;
 // Vocabulary is loaded globally because saved terms highlight every video,
 // while the Library filter only changes which cards are visible.
 let currentLibraryView = "notes";
+let vocabularyPronunciationPlayer = null;
 let showAllVocabulary = false;
 let vocabularyEntries = [];
 let vocabularyLoadGeneration = 0;
@@ -873,6 +875,7 @@ function setNotesFilter(showAll) {
 
 function switchLibraryView(view) {
   if (!["notes", "vocabulary"].includes(view)) return;
+  if (view !== "vocabulary") vocabularyPronunciationPlayer?.stop();
   currentLibraryView = view;
   const notesActive = view === "notes";
   const notesButton = document.getElementById("libraryNotesTab");
@@ -919,7 +922,7 @@ async function checkCurrentTab() {
       lastFocusedWindow: true,
     });
 
-    debugLog("[YouTube Digest Panel] Found tab:", tab?.id, tab?.url);
+    debugLog("[Speak Digest Panel] Found tab:", tab?.id, tab?.url);
 
     if (!tab?.url) {
       showState("welcome");
@@ -945,7 +948,13 @@ async function checkCurrentTab() {
           action: "relayToContent",
           payload: { action: "getVideoInfo" },
         });
-        debugLog("[YouTube Digest Panel] getVideoInfo result:", result);
+        debugLog("[Speak Digest Panel] getVideoInfo result:", result);
+        if (result?.code === "CONTENT_SCRIPT_UNAVAILABLE") {
+          showError("YouTube connection lost", result.error);
+          document.getElementById("errorBtn").textContent = "Retry connection";
+          errorAction = checkCurrentTab;
+          return;
+        }
         if (result.success && result.response) {
           currentVideoTitle = result.response.title || "";
           currentChannelName = result.response.channelName || "";
@@ -953,7 +962,7 @@ async function checkCurrentTab() {
           currentVideoDuration = result.response.duration || 0;
         }
       } catch (e) {
-        console.error("[YouTube Digest Panel] getVideoInfo error:", e);
+        console.error("[Speak Digest Panel] getVideoInfo error:", e);
         currentVideoTitle = "";
         currentChannelName = "";
         currentVideoDescription = "";
@@ -1000,7 +1009,9 @@ function extractVideoId(url) {
 // ============================================================
 
 async function startDigest(videoId, videoUrl) {
+  if (videoId !== currentVideoId) vocabularyPronunciationPlayer?.stop();
   resetTranscriptSearchForVideo(videoId);
+  setTranscriptActionStatus("");
 
   if (videoId !== askState.videoId) {
     resetAskStateForVideo(askState, videoId);
@@ -1025,6 +1036,8 @@ async function startDigest(videoId, videoUrl) {
 
   // Every video change invalidates observer work and in-flight translations.
   if (videoId !== currentVideoId) {
+    activeTranslationQueue?.cancel();
+    activeTranslationQueue = null;
     closeActiveExplanationModal?.();
     translationGeneration += 1;
     overviewTranslationGeneration += 1;
@@ -1120,7 +1133,7 @@ async function startDigest(videoId, videoUrl) {
     if (transcriptResult.error === "NO_SUPADATA_KEY") {
       showError(
         "API key missing",
-        "Add your Supadata API key in YouTube Digest Settings.",
+        "Add your Supadata API key in Speak Digest Settings.",
       );
       return;
     }
@@ -1221,7 +1234,7 @@ function renderAnalysisResults(analysis) {
     `;
     li.addEventListener("click", () => {
       debugLog(
-        "[YouTube Digest Panel] Chapter clicked:",
+        "[Speak Digest Panel] Chapter clicked:",
         chapter.timestamp,
         chapter.timestampSeconds,
       );
@@ -1256,7 +1269,7 @@ function renderAnalysisResults(analysis) {
     `;
     div.addEventListener("click", () => {
       debugLog(
-        "[YouTube Digest Panel] Quote clicked:",
+        "[Speak Digest Panel] Quote clicked:",
         quote.timestamp,
         quote.timestampSeconds,
       );
@@ -1324,7 +1337,7 @@ async function saveQuoteAsNote(quote, fieldId, btn) {
       // Refresh notes list if on Notes tab
       loadNotes(currentVideoId);
     } else {
-      console.error("[YouTube Digest] Save quote as note failed:", result.error);
+      console.error("[Speak Digest] Save quote as note failed:", result.error);
       btn.textContent = "Error";
       setTimeout(() => {
         btn.textContent = originalText;
@@ -1332,7 +1345,7 @@ async function saveQuoteAsNote(quote, fieldId, btn) {
       }, 1500);
     }
   } catch (error) {
-    console.error("[YouTube Digest] Save quote as note error:", error);
+    console.error("[Speak Digest] Save quote as note error:", error);
     btn.textContent = "Error";
     setTimeout(() => {
       btn.textContent = originalText;
@@ -1529,12 +1542,116 @@ function renderTranscript() {
   startPlaybackTracking();
 }
 
-function copyTranscript() {
-  copyToClipboardWithFeedback(currentTranscriptText || "", "copyTranscriptBtn");
+function buildTranscriptTextForMode(mode, originalText, segments, translations) {
+  if (mode === "original") {
+    return { text: originalText || "", missingCount: 0 };
+  }
+
+  let missingCount = 0;
+  const blocks = segments.map((segment) => {
+    const translated = translations.get(segment.id);
+    if (typeof translated !== "string" || !translated.trim()) {
+      missingCount += 1;
+      return "";
+    }
+    return mode === "bilingual"
+      ? `${segment.text}\n${translated.trim()}`
+      : translated.trim();
+  });
+  return {
+    text: missingCount ? "" : blocks.join("\n\n"),
+    missingCount,
+  };
 }
 
-function exportTranscript() {
-  const transcriptContent = currentTranscriptText || "";
+function setTranscriptActionStatus(message) {
+  const status = document.getElementById("transcriptActionStatus");
+  if (status) status.textContent = message;
+}
+
+async function prepareSelectedTranscriptText(buttonId) {
+  if (transcriptTextActionInProgress) return null;
+  transcriptTextActionInProgress = true;
+  const buttons = ["copyTranscriptBtn", "exportTranscriptBtn"]
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
+  const activeButton = document.getElementById(buttonId);
+  const originalLabel = activeButton?.textContent;
+  buttons.forEach((button) => {
+    button.disabled = true;
+  });
+  if (activeButton) activeButton.textContent = "Preparing…";
+  setTranscriptActionStatus("");
+
+  try {
+    const videoId = currentVideoId;
+    const mode = currentTranscriptMode;
+    if (mode === "original") {
+      return { mode, text: currentTranscriptText || "" };
+    }
+
+    setTranscriptActionStatus("Preparing the complete translated transcript…");
+    if (
+      !activeTranslationQueue ||
+      activeTranslationQueue.videoId !== videoId ||
+      activeTranslationQueue.mode !== mode
+    ) {
+      await translateTranscript();
+    }
+    const generation = translationGeneration;
+    const queue = activeTranslationQueue;
+    await queue?.completeMissing();
+    if (
+      videoId !== currentVideoId ||
+      mode !== currentTranscriptMode ||
+      generation !== translationGeneration
+    ) {
+      return null;
+    }
+
+    const segments = getActiveTranscriptSegments();
+    const translations = new Map(
+      segments.map((segment) => [
+        segment.id,
+        transcriptParagraphCache.get(transcriptTranslationCacheKey(segment)),
+      ]),
+    );
+    const result = buildTranscriptTextForMode(
+      mode,
+      currentTranscriptText,
+      segments,
+      translations,
+    );
+    if (result.missingCount) {
+      setTranscriptActionStatus(
+        "Some lines could not be translated. Try again to complete the transcript.",
+      );
+      return null;
+    }
+    setTranscriptActionStatus("");
+    return { mode, text: result.text };
+  } catch (error) {
+    console.error("Transcript preparation failed:", error);
+    setTranscriptActionStatus("Could not prepare the transcript. Try again.");
+    return null;
+  } finally {
+    buttons.forEach((button) => {
+      button.disabled = false;
+    });
+    if (activeButton) activeButton.textContent = originalLabel;
+    transcriptTextActionInProgress = false;
+  }
+}
+
+async function copyTranscript() {
+  const prepared = await prepareSelectedTranscriptText("copyTranscriptBtn");
+  if (!prepared) return;
+  await copyToClipboardWithFeedback(prepared.text, "copyTranscriptBtn");
+}
+
+async function exportTranscript() {
+  const prepared = await prepareSelectedTranscriptText("exportTranscriptBtn");
+  if (!prepared) return;
   const videoUrl = `https://youtube.com/watch?v=${currentVideoId}`;
 
   let exportText = "";
@@ -1543,18 +1660,25 @@ function exportTranscript() {
   exportText += `Title: ${currentVideoTitle || "Unknown"}\n`;
   exportText += `Channel: ${currentChannelName || "Unknown"}\n`;
   exportText += `URL: ${videoUrl}\n`;
+  const languageLabel = {
+    original: "Original",
+    zh: "简体中文",
+    bilingual: "Original + 简体中文",
+  }[prepared.mode];
+  exportText += `Language: ${languageLabel}\n`;
   exportText += `\n${"—".repeat(60)}\n\n`;
 
-  if (currentVideoDescription) {
+  if (prepared.mode === "original" && currentVideoDescription) {
     exportText += `DESCRIPTION:\n${currentVideoDescription}\n`;
     exportText += `\n${"—".repeat(60)}\n\n`;
   }
 
-  exportText += `TRANSCRIPT:\n\n${transcriptContent}\n`;
+  exportText += `TRANSCRIPT:\n\n${prepared.text}\n`;
   exportText += `\n${"—".repeat(60)}\n`;
-  exportText += `Exported by YouTube Digest\n`;
+  exportText += `Exported by Speak Digest\n`;
 
-  const filename = `${sanitizeFilename(currentVideoTitle)}-transcript.txt`;
+  const suffix = prepared.mode === "original" ? "" : `-${prepared.mode}`;
+  const filename = `${sanitizeFilename(currentVideoTitle)}-transcript${suffix}.txt`;
   downloadTextFile(exportText, filename);
 }
 
@@ -1684,7 +1808,7 @@ function showConfigError(configStatus) {
   showState("error");
   document.getElementById("errorTitle").textContent = "API Keys Missing";
   document.getElementById("errorMessage").textContent =
-    `Add your ${missingKeys.join(" and ")} API key${missingKeys.length === 1 ? "" : "s"} in YouTube Digest Settings.`;
+    `Add your ${missingKeys.join(" and ")} API key${missingKeys.length === 1 ? "" : "s"} in Speak Digest Settings.`;
   document.getElementById("errorBtn").textContent = "Open Settings";
   errorAction = () => chrome.runtime.sendMessage({ action: "openOptions" });
 }
@@ -1694,6 +1818,7 @@ function showConfigError(configStatus) {
 // ============================================================
 
 function switchTab(tabName) {
+  if (tabName !== "library") vocabularyPronunciationPlayer?.stop();
   const contentArea = document.getElementById("contentArea");
   if (transcriptTabIsActive() && tabName !== "transcript") {
     captureTranscriptViewPosition({ immediate: true });
@@ -2405,7 +2530,7 @@ async function triggerAnalysis() {
     await saveToCache(requestSnapshot.videoId, requestSnapshot);
   } catch (error) {
     if (!isCurrentAnalysisRequest(requestSnapshot)) return;
-    console.error("[YouTube Digest Panel] Analysis error:", error);
+    console.error("[Speak Digest Panel] Analysis error:", error);
     if (chapterList)
       chapterList.innerHTML = `<li class="chapter-item" style="color: var(--accent); border: none;">Error: ${escapeHtml(error.message)}</li>`;
   } finally {
@@ -2430,9 +2555,9 @@ function isCurrentAnalysisRequest(snapshot) {
 // ============================================================
 
 async function seekTo(seconds) {
-  debugLog("[YouTube Digest Panel] seekTo called with:", seconds);
+  debugLog("[Speak Digest Panel] seekTo called with:", seconds);
   if (seconds === undefined || seconds === null) {
-    debugLog("[YouTube Digest Panel] seekTo aborted - no seconds value");
+    debugLog("[Speak Digest Panel] seekTo aborted - no seconds value");
     return;
   }
 
@@ -2446,11 +2571,11 @@ async function seekTo(seconds) {
     if (youtubeTabId) {
       try {
         await chrome.tabs.sendMessage(youtubeTabId, payload);
-        debugLog("[YouTube Digest Panel] seekTo direct success");
+        debugLog("[Speak Digest Panel] seekTo direct success");
         return;
       } catch (directErr) {
         debugLog(
-          "[YouTube Digest Panel] Direct seekTo failed, falling back to relay:",
+          "[Speak Digest Panel] Direct seekTo failed, falling back to relay:",
           directErr.message,
         );
       }
@@ -2461,9 +2586,9 @@ async function seekTo(seconds) {
       action: "relayToContent",
       payload,
     });
-    debugLog("[YouTube Digest Panel] seekTo relay result:", result);
+    debugLog("[Speak Digest Panel] seekTo relay result:", result);
   } catch (error) {
-    console.error("[YouTube Digest Panel] seekTo error:", error);
+    console.error("[Speak Digest Panel] seekTo error:", error);
   }
 }
 
@@ -3200,7 +3325,7 @@ async function saveVocabularySelection(selection, button) {
     }, 1800);
     return result;
   } catch (error) {
-    console.error("[YouTube Digest Panel] Save vocabulary error:", error);
+    console.error("[Speak Digest Panel] Save vocabulary error:", error);
     setVocabularySaveFeedback(button, "Could not save", false);
     return { success: false, error: error.message };
   }
@@ -3225,7 +3350,7 @@ async function refreshVocabularyEntries(requestSnapshot = null) {
     }
   } catch (error) {
     if (generation !== vocabularyLoadGeneration) return;
-    console.error("[YouTube Digest Panel] Load vocabulary error:", error);
+    console.error("[Speak Digest Panel] Load vocabulary error:", error);
   }
 }
 
@@ -3284,6 +3409,18 @@ function selectPreferredSpeechVoice(voices, targetLanguage) {
   const baseMatch = (voice) =>
     normalizeLanguage(voice.lang).split("-")[0] === targetBase;
   if (targetBase === "en") {
+    const naturalVoice = candidates.find(
+      (voice) =>
+        normalizeLanguage(voice.lang) === "en-us" &&
+        /online.*natural/i.test(String(voice.name || "")),
+    );
+    if (naturalVoice) return naturalVoice;
+    const googleVoice = candidates.find(
+      (voice) =>
+        normalizeLanguage(voice.lang) === "en-us" &&
+        /google us english/i.test(String(voice.name || "")),
+    );
+    if (googleVoice) return googleVoice;
     const samanthaVoice = candidates.find(
       (voice) =>
         voice.localService === true &&
@@ -3314,6 +3451,7 @@ function speakVocabularyTerm(
   sourceLanguage,
   speechSynthesis,
   UtteranceCtor,
+  onEnd,
 ) {
   const spokenTerm = typeof term === "string" ? term.trim() : "";
   const speechLanguage = resolveVocabularySpeechLanguage(
@@ -3348,7 +3486,15 @@ function speakVocabularyTerm(
     } else {
       utterance.lang = speechLanguage;
     }
+    if (typeof onEnd === "function") {
+      utterance.onend = () => onEnd("idle");
+      utterance.onerror = (event) =>
+        onEnd(
+          ["canceled", "interrupted"].includes(event?.error) ? "idle" : "error",
+        );
+    }
     speechSynthesis.cancel();
+    speechSynthesis.resume?.();
     speechSynthesis.speak(utterance);
     return true;
   } catch {
@@ -3356,26 +3502,202 @@ function speakVocabularyTerm(
   }
 }
 
+function dictionaryAudioUrl(term, sourceLanguage) {
+  if (typeof term !== "string") return null;
+  if (resolveVocabularySpeechLanguage(term, sourceLanguage) !== "en-US") {
+    return null;
+  }
+  const text = term
+    .normalize("NFKC")
+    .replaceAll("’", "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    !text ||
+    text.length > 240 ||
+    !/[a-z]/i.test(text) ||
+    !/^[a-z0-9 '.,!?()\/-]+$/i.test(text)
+  ) {
+    return null;
+  }
+  return `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(text)}&type=2`;
+}
+
+// One player serves every Vocabulary card. English uses dictionary audio first;
+// other languages, or failed dictionary playback, use browser speech.
+function createVocabularyPronunciationPlayer(
+  createAudio,
+  speechSynthesis,
+  UtteranceCtor,
+  schedule = setTimeout,
+  clear = clearTimeout,
+) {
+  let active = null;
+  const speechAvailable = Boolean(
+    speechSynthesis &&
+      typeof speechSynthesis.cancel === "function" &&
+      typeof speechSynthesis.speak === "function" &&
+      typeof UtteranceCtor === "function",
+  );
+  const audioAvailable = typeof createAudio === "function";
+
+  function clearAudio(current) {
+    if (current.timer !== null) {
+      clear(current.timer);
+      current.timer = null;
+    }
+    if (!current.audio) return;
+    const audio = current.audio;
+    current.audio = null;
+    audio.onplaying = null;
+    audio.onended = null;
+    audio.onerror = null;
+    try {
+      audio.pause();
+      audio.removeAttribute?.("src");
+      audio.load?.();
+    } catch {
+      // The audio element may already be detached during panel teardown.
+    }
+  }
+
+  function finish(current, state) {
+    if (active !== current) return;
+    active = null;
+    clearAudio(current);
+    current.onState(state);
+  }
+
+  function stop(owner) {
+    if (!active || (owner !== undefined && active.owner !== owner)) return;
+    const current = active;
+    active = null;
+    clearAudio(current);
+    if (current.mode === "speech") {
+      try {
+        speechSynthesis?.cancel?.();
+      } catch {
+        // Playback may already have ended.
+      }
+    }
+    current.onState("idle");
+  }
+
+  function useFallback(current) {
+    if (active !== current || current.mode === "speech") return;
+    current.mode = "speech";
+    clearAudio(current);
+    if (!speechAvailable) {
+      finish(current, "error");
+      return;
+    }
+    const started = speakVocabularyTerm(
+      current.term,
+      current.sourceLanguage,
+      speechSynthesis,
+      UtteranceCtor,
+      (state) => finish(current, state),
+    );
+    if (!started) finish(current, "error");
+    else if (active === current) current.onState("playing");
+  }
+
+  function play(term, sourceLanguage, owner, onState, beforePlay) {
+    stop();
+    const spokenTerm = typeof term === "string" ? term.trim() : "";
+    const language = resolveVocabularySpeechLanguage(spokenTerm, sourceLanguage);
+    const url = dictionaryAudioUrl(spokenTerm, sourceLanguage);
+    if (
+      !spokenTerm ||
+      spokenTerm.length > 1000 ||
+      !language ||
+      (!speechAvailable && !(audioAvailable && url))
+    ) {
+      onState("error");
+      return false;
+    }
+
+    const current = {
+      term: spokenTerm,
+      sourceLanguage,
+      owner,
+      onState,
+      mode: "audio",
+      audio: null,
+      timer: null,
+    };
+    active = current;
+    try {
+      beforePlay?.();
+    } catch {
+      // A missing YouTube receiver should not block pronunciation.
+    }
+
+    if (!url || !audioAvailable) {
+      useFallback(current);
+      return true;
+    }
+
+    try {
+      const audio = createAudio(url);
+      if (!audio || typeof audio.play !== "function") {
+        useFallback(current);
+        return true;
+      }
+      current.audio = audio;
+      audio.preload = "none";
+      audio.playbackRate = 1;
+      audio.onplaying = () => {
+        if (active === current && current.timer !== null) {
+          clear(current.timer);
+          current.timer = null;
+        }
+      };
+      audio.onended = () => finish(current, "idle");
+      audio.onerror = () => useFallback(current);
+      current.onState("playing");
+      current.timer = schedule(() => useFallback(current), 5000);
+      Promise.resolve(audio.play()).catch(() => useFallback(current));
+      return true;
+    } catch {
+      useFallback(current);
+      return true;
+    }
+  }
+
+  return { play, stop, audioAvailable, speechAvailable };
+}
+
 function getVocabularySpeechServices() {
-  const speechSynthesis =
-    typeof window !== "undefined" ? window.speechSynthesis : null;
+  if (vocabularyPronunciationPlayer) return vocabularyPronunciationPlayer;
+  const browserWindow = typeof window !== "undefined" ? window : null;
   const UtteranceCtor =
     typeof SpeechSynthesisUtterance === "function"
       ? SpeechSynthesisUtterance
-      : typeof window !== "undefined" &&
-          typeof window.SpeechSynthesisUtterance === "function"
-        ? window.SpeechSynthesisUtterance
-        : null;
-  return {
-    speechSynthesis,
+      : browserWindow?.SpeechSynthesisUtterance;
+  vocabularyPronunciationPlayer = createVocabularyPronunciationPlayer(
+    typeof browserWindow?.Audio === "function"
+      ? (url) => new browserWindow.Audio(url)
+      : null,
+    browserWindow?.speechSynthesis,
     UtteranceCtor,
-    available: Boolean(
-      speechSynthesis &&
-        typeof speechSynthesis.cancel === "function" &&
-        typeof speechSynthesis.speak === "function" &&
-        typeof UtteranceCtor === "function",
-    ),
-  };
+  );
+  browserWindow?.addEventListener?.("pagehide", () => {
+    vocabularyPronunciationPlayer?.stop();
+  });
+  return vocabularyPronunciationPlayer;
+}
+
+function pauseYouTubePlaybackForPronunciation() {
+  try {
+    const request = chrome.runtime.sendMessage({
+      action: "relayToContent",
+      payload: { action: "pauseVideo" },
+    });
+    request?.catch?.(() => {});
+  } catch {
+    // Audio can still play if the active YouTube tab has disconnected.
+  }
 }
 
 function createVocabularySpeakerIcon() {
@@ -3416,6 +3738,7 @@ function openVocabularyTimestamp(entry, safeUrl) {
 }
 
 function renderVocabulary(entries, filteredVideoId) {
+  vocabularyPronunciationPlayer?.stop();
   const vocabularyList = document.getElementById("vocabularyList");
   const vocabularyIntro = document.getElementById("vocabularyIntro");
   if (!vocabularyList || !vocabularyIntro) return;
@@ -3430,7 +3753,7 @@ function renderVocabulary(entries, filteredVideoId) {
   }
 
   vocabularyIntro.hidden = true;
-  const speechServices = getVocabularySpeechServices();
+  const pronunciationPlayer = getVocabularySpeechServices();
   entries.forEach((entry) => {
     const card = document.createElement("article");
     card.className = "vocabulary-item";
@@ -3459,21 +3782,38 @@ function renderVocabulary(entries, filteredVideoId) {
       String(entry.sourceLanguage || ""),
     );
     let pronunciationControl;
-    if (speechServices.available && speechLanguage) {
+    const canPlay = Boolean(
+      speechLanguage &&
+        (pronunciationPlayer.speechAvailable ||
+          (pronunciationPlayer.audioAvailable &&
+            dictionaryAudioUrl(termLabel, String(entry.sourceLanguage || "")))),
+    );
+    if (canPlay) {
       const pronunciationButton = document.createElement("button");
       pronunciationButton.className = "vocabulary-pronunciation";
       pronunciationButton.type = "button";
       pronunciationButton.appendChild(createVocabularySpeakerIcon());
       pronunciationButton.title = `Pronounce ${termLabel}`;
       pronunciationButton.setAttribute("aria-label", `Pronounce ${termLabel}`);
+      const feedback = document.createElement("span");
+      feedback.className = "vocabulary-pronunciation-error";
+      feedback.setAttribute("role", "status");
+      feedback.hidden = true;
+      termBlock.appendChild(feedback);
       pronunciationButton.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        speakVocabularyTerm(
+        pronunciationPlayer.play(
           termLabel,
           String(entry.sourceLanguage || ""),
-          speechServices.speechSynthesis,
-          speechServices.UtteranceCtor,
+          pronunciationButton,
+          (state) => {
+            pronunciationButton.classList.toggle("is-playing", state === "playing");
+            feedback.hidden = state !== "error";
+            feedback.textContent =
+              state === "error" ? "Pronunciation unavailable. Try again." : "";
+          },
+          pauseYouTubePlaybackForPronunciation,
         );
       });
       pronunciationControl = pronunciationButton;
@@ -3551,7 +3891,7 @@ async function deleteVocabularyEntry(entryId) {
     }
     await refreshVocabularyEntries();
   } catch (error) {
-    console.error("[YouTube Digest Panel] Delete vocabulary error:", error);
+    console.error("[Speak Digest Panel] Delete vocabulary error:", error);
   }
 }
 
@@ -4134,7 +4474,7 @@ async function evictOldCacheEntries(maxEntries) {
       .map((e) => e.key);
     if (toRemove.length > 0) {
       await chrome.storage.local.remove(toRemove);
-      debugLog(`[YouTube Digest] Evicted ${toRemove.length} old cache entries`);
+      debugLog(`[Speak Digest] Evicted ${toRemove.length} old cache entries`);
     }
   } catch (error) {
     console.error("Cache eviction error:", error);
@@ -4199,7 +4539,7 @@ async function loadNotes(videoId, requestSnapshot = null) {
       renderNotes(result.notes, videoId);
     }
   } catch (error) {
-    console.error("[YouTube Digest Panel] Load notes error:", error);
+    console.error("[Speak Digest Panel] Load notes error:", error);
   }
 }
 
@@ -4306,7 +4646,7 @@ async function deleteNote(noteId) {
       noteId: noteId,
     });
   } catch (error) {
-    console.error("[YouTube Digest Panel] Delete note error:", error);
+    console.error("[Speak Digest Panel] Delete note error:", error);
   }
 }
 
@@ -4656,7 +4996,10 @@ async function handleTranscriptModeChange(mode) {
   if (!["original", "zh", "bilingual"].includes(mode)) return;
   if (mode === currentTranscriptMode) return;
 
+  activeTranslationQueue?.cancel();
+  activeTranslationQueue = null;
   currentTranscriptMode = mode;
+  setTranscriptActionStatus("");
   translationGeneration += 1;
   translationWorkCount = 0;
   setTranslatingSpinner(false);
@@ -4765,17 +5108,16 @@ function alignTranslatedSegmentBatch(sourceSegments, responseSegments) {
 
 function updateTranslatedRow(segment, index, alignedItem, generation) {
   if (generation !== translationGeneration) return;
-  const row = document.querySelector(
-    `.transcript-entry[data-segment-id="${CSS.escape(segment.id)}"]`,
-  );
-  if (!row) return;
-
   if (alignedItem.text) {
     transcriptParagraphCache.set(
       transcriptTranslationCacheKey(segment),
       alignedItem.text,
     );
   }
+  const row = document.querySelector(
+    `.transcript-entry[data-segment-id="${CSS.escape(segment.id)}"]`,
+  );
+  if (!row) return;
 
   const copy = row.querySelector(".transcript-copy");
   if (copy) {
@@ -4895,6 +5237,7 @@ async function translateTranscript() {
   const segments = getActiveTranscriptSegments();
   if (!segments.length || currentTranscriptMode === "original") return;
 
+  activeTranslationQueue?.cancel();
   translationGeneration += 1;
   const generation = translationGeneration;
   const videoId = currentVideoId;
@@ -4904,14 +5247,31 @@ async function translateTranscript() {
   const rows = renderTranscriptModeRows(segments, mode);
   const queue = [];
   const queued = new Set();
+  const inFlight = new Set();
+  const idleWaiters = [];
   let processing = false;
+  let canceled = false;
+
+  const settleIdleWaiters = () => {
+    if (!canceled && (processing || queue.length)) return;
+    idleWaiters.splice(0).forEach((resolve) => resolve());
+  };
 
   const processNext = async () => {
-    if (processing || queue.length === 0 || generation !== translationGeneration)
+    if (processing || canceled || generation !== translationGeneration) {
+      settleIdleWaiters();
       return;
+    }
+    if (!queue.length) {
+      settleIdleWaiters();
+      return;
+    }
     processing = true;
     const indices = queue.splice(0, 3);
-    indices.forEach((index) => queued.delete(index));
+    indices.forEach((index) => {
+      queued.delete(index);
+      inFlight.add(index);
+    });
     try {
       await requestTranscriptTranslationBatch(
         indices,
@@ -4921,24 +5281,40 @@ async function translateTranscript() {
         mode,
       );
     } finally {
+      indices.forEach((index) => inFlight.delete(index));
       processing = false;
-      if (queue.length && generation === translationGeneration) processNext();
+      if (queue.length && !canceled && generation === translationGeneration) {
+        void processNext();
+      } else {
+        settleIdleWaiters();
+      }
     }
   };
 
   const enqueue = (index, force = false) => {
-    if (!Number.isInteger(index) || !segments[index]) return;
+    if (canceled || !Number.isInteger(index) || !segments[index]) return;
     const cached = transcriptParagraphCache.has(
       transcriptTranslationCacheKey(segments[index]),
     );
-    if ((!force && cached) || queued.has(index)) return;
+    if ((!force && cached) || queued.has(index) || inFlight.has(index)) return;
     queue.push(index);
     queued.add(index);
     // Let all entries reported in the same viewport turn collect before the
     // worker starts, producing one small contextual multi-segment request.
     Promise.resolve().then(processNext);
   };
-  activeTranslationQueue = { enqueue };
+  const completeMissing = () => {
+    segments.forEach((segment, index) => enqueue(index));
+    if (!processing && !queue.length) return Promise.resolve();
+    return new Promise((resolve) => idleWaiters.push(resolve));
+  };
+  const cancel = () => {
+    canceled = true;
+    queue.length = 0;
+    queued.clear();
+    settleIdleWaiters();
+  };
+  activeTranslationQueue = { enqueue, completeMissing, cancel, videoId, mode };
 
   transcriptScrollObserver = new IntersectionObserver(
     (observerEntries) => {
@@ -5015,6 +5391,21 @@ globalThis.__YTD_TRANSCRIPT_TESTING__ = {
   alignTranslatedSegmentBatch,
   renderSubtitleInlineMarkup,
   renderTranscriptSegmentContent,
+  buildTranscriptTextForMode,
+  prepareSelectedTranscriptText,
+  exportTranscript,
+  setTranscriptExportTestState(state) {
+    currentVideoId = state.videoId;
+    currentTranscript = state.transcript;
+    currentTranscriptText = state.originalText;
+    currentTranscriptMode = state.mode;
+    currentVideoTitle = state.videoTitle || "";
+    currentChannelName = state.channelName || "";
+    currentVideoDescription = state.description || "";
+    translationGeneration = state.generation || 0;
+    transcriptParagraphCache = state.translationCache || new Map();
+    activeTranslationQueue = state.queue || null;
+  },
   createTranscriptSearchState,
   getNextTranscriptSearchIndex,
   isTranscriptSearchTextNodeEligible,
@@ -5045,6 +5436,8 @@ globalThis.__YTD_VOCABULARY_UI_TESTING__ = {
   resolveVocabularySpeechLanguage,
   selectPreferredSpeechVoice,
   speakVocabularyTerm,
+  dictionaryAudioUrl,
+  createVocabularyPronunciationPlayer,
 };
 
 globalThis.__YTD_RACE_TESTING__ = {

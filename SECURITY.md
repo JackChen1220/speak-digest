@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-YouTube Digest is a small GitHub-only project. Security fixes are made on the latest code on `main` and, when releases are published, the latest GitHub release. Older snapshots are not supported.
+Speak Digest is a small GitHub-only project. Security fixes are made on the latest code on `main` and, when releases are published, the latest GitHub release. Older snapshots are not supported.
 
 ## Report a vulnerability privately
 
@@ -25,7 +25,7 @@ There is no guaranteed response time or bug-bounty program. Please allow a reaso
 Examples include:
 
 - API keys or private content included in source, logs, screenshots, or release ZIPs;
-- requests to network origins outside the documented YouTube, Supadata, DeepSeek, and optional Tavily hosts;
+- requests to network origins outside the documented YouTube, Supadata, DeepSeek, optional Tavily, and Youdao dictionary hosts;
 - script or HTML injection through transcript, metadata, service errors, or model output;
 - access to browsing data outside the documented YouTube scope;
 - unintended transmission of notes, transcripts, or credentials;
@@ -36,7 +36,7 @@ Transcript text, video metadata, web results, and model output are untrusted dat
 
 The side panel and message relay use the active YouTube tab only and fail closed on other pages. Transcript search is bounded literal string matching, not a user-built regular expression, and its marks must preserve escaped content and existing Vocabulary highlights.
 
-Vocabulary speech is local and sends no audio to any provider. The installed Chrome or system voice may vary, but speech playback must not add a remote audio dependency without an explicit privacy and permission review.
+Vocabulary pronunciation builds a fixed `dict.youdao.com` audio URL from a bounded English term and requests it only after a click. The request does not include API keys, notes, or transcript context. On failure it falls back to browser `speechSynthesis`, whose selected voice may be online; non-English terms use browser speech directly. No dictionary audio is stored by the extension.
 
 ## User security guidance
 

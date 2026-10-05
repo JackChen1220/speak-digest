@@ -11,11 +11,20 @@ function loadSidepanelHelpers({
   sendMessage = () => Promise.resolve({}),
   setTimeoutImpl = () => 0,
   clearTimeoutImpl = () => {},
+  captureDownload = null,
 } = {}) {
   const listeners = { addListener() {} };
+  const testURL = class extends URL {};
+  testURL.createObjectURL = (blob) => {
+    if (captureDownload) captureDownload.blob = blob;
+    return "blob:test";
+  };
+  testURL.revokeObjectURL = () => {};
+  const buttons = new Map();
   const sandbox = {
     console,
-    URL,
+    URL: captureDownload ? testURL : URL,
+    Blob,
     TextDecoder,
     TextEncoder,
     setTimeout: setTimeoutImpl,
@@ -29,8 +38,19 @@ function loadSidepanelHelpers({
       addEventListener() {},
       querySelectorAll: () => [],
       querySelector: () => null,
-      getElementById: () => null,
-      createElement: () => {
+      getElementById: (id) => {
+        if (!captureDownload) return null;
+        if (!buttons.has(id)) buttons.set(id, { textContent: id, disabled: false });
+        return buttons.get(id);
+      },
+      createElement: (tagName) => {
+        if (tagName === "a" && captureDownload) {
+          return {
+            click() {
+              captureDownload.filename = this.download;
+            },
+          };
+        }
         let value = "";
         return {
           set textContent(text) {
@@ -189,7 +209,7 @@ test("Overview adds a full summary, matching language modes, and sticky controls
   assert.match(html, /data-overview-mode="bilingual"[\s\S]*?>\u53cc\u8bed</);
   assert.match(
     html,
-    /class="sticky-control-row"[\s\S]*?id="transcriptModeControl"[\s\S]*?id="copyTranscriptBtn"[\s\S]*?id="exportTranscriptBtn"/,
+    /class="sticky-control-row transcript-control-row"[\s\S]*?id="transcriptModeControl"[\s\S]*?id="copyTranscriptBtn"[\s\S]*?id="exportTranscriptBtn"/,
   );
   assert.match(css, /\.sticky-control-row\s*\{[\s\S]*?position: sticky;[\s\S]*?top: -24px;/);
   assert.match(js, /contentType: "overviewBatch"/);
@@ -419,6 +439,138 @@ test("translated-only omits English while bilingual renders aligned English and 
   assert.match(bilingual, /transcript-original/);
   assert.match(bilingual, /Original English sentence/);
   assert.match(bilingual, /\u4e2d\u6587\u8bd1\u6587/);
+});
+
+test("Transcript text output follows the selected language and keeps bilingual pairs aligned", () => {
+  const { buildTranscriptTextForMode } = loadSidepanelHelpers();
+  const segments = [
+    { id: "first", text: "First English sentence." },
+    { id: "second", text: "Second English sentence." },
+  ];
+  const translations = new Map([
+    ["first", "第一句中文。"],
+    ["second", "第二句中文。"],
+  ]);
+
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(buildTranscriptTextForMode("original", "Original raw transcript", segments, translations))),
+    { text: "Original raw transcript", missingCount: 0 },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(buildTranscriptTextForMode("zh", "Original raw transcript", segments, translations))),
+    { text: "第一句中文。\n\n第二句中文。", missingCount: 0 },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(buildTranscriptTextForMode("bilingual", "Original raw transcript", segments, translations))),
+    {
+      text: "First English sentence.\n第一句中文。\n\nSecond English sentence.\n第二句中文。",
+      missingCount: 0,
+    },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(buildTranscriptTextForMode("zh", "Original raw transcript", segments, new Map([["first", "第一句中文。"]])))),
+    { text: "", missingCount: 1 },
+  );
+});
+
+test("Transcript export preparation waits for offscreen translations and rejects incomplete text", async () => {
+  const helpers = loadSidepanelHelpers();
+  const transcript = [
+    { start: 0, text: "First complete English sentence for transcript export is deliberately long enough to form its own segment." },
+    { start: 5, text: "Second complete English sentence for transcript export is also long enough to form its own segment." },
+  ];
+  const segments = helpers.groupTranscriptEntries(transcript);
+  assert.equal(segments.length, 2);
+  const translationCache = new Map();
+  let finishTranslation;
+  helpers.setTranscriptExportTestState({
+    videoId: "video-1",
+    transcript,
+    originalText: "First complete English sentence for transcript export. Second complete English sentence for transcript export.",
+    mode: "zh",
+    translationCache,
+    queue: {
+      videoId: "video-1",
+      mode: "zh",
+      completeMissing: () => new Promise((resolve) => {
+        finishTranslation = () => {
+          translationCache.set(`video-1:zh:semantic:${segments[0].id}`, "第一句中文。");
+          translationCache.set(`video-1:zh:semantic:${segments[1].id}`, "第二句中文。");
+          resolve();
+        };
+      }),
+    },
+  });
+
+  const preparedPromise = helpers.prepareSelectedTranscriptText("exportTranscriptBtn");
+  assert.equal(typeof finishTranslation, "function");
+  finishTranslation();
+  const prepared = await preparedPromise;
+  assert.equal(prepared.mode, "zh");
+  assert.equal(prepared.text, "第一句中文。\n\n第二句中文。");
+
+  translationCache.delete(`video-1:zh:semantic:${segments[1].id}`);
+  helpers.setTranscriptExportTestState({
+    videoId: "video-1",
+    transcript,
+    originalText: "Original raw transcript",
+    mode: "bilingual",
+    translationCache,
+    queue: { videoId: "video-1", mode: "bilingual", completeMissing: async () => {} },
+  });
+  assert.equal(await helpers.prepareSelectedTranscriptText("exportTranscriptBtn"), null);
+});
+
+test("Transcript Export downloads the selected language and never downloads partial translation", async () => {
+  const captureDownload = {};
+  const helpers = loadSidepanelHelpers({ captureDownload });
+  const transcript = [
+    { start: 0, text: "First complete English sentence for transcript export is deliberately long enough to form its own segment." },
+    { start: 5, text: "Second complete English sentence for transcript export is also long enough to form its own segment." },
+  ];
+  const segments = helpers.groupTranscriptEntries(transcript);
+  const translationCache = new Map([
+    [`video-1:zh:semantic:${segments[0].id}`, "第一句中文。"],
+    [`video-1:zh:semantic:${segments[1].id}`, "第二句中文。"],
+  ]);
+  const setMode = (mode) => helpers.setTranscriptExportTestState({
+    videoId: "video-1",
+    transcript,
+    originalText: "Original raw transcript",
+    mode,
+    videoTitle: "Demo Video",
+    description: "Original description",
+    translationCache,
+    queue: { videoId: "video-1", mode, completeMissing: async () => {} },
+  });
+
+  setMode("zh");
+  await helpers.exportTranscript();
+  let file = await captureDownload.blob.text();
+  assert.equal(captureDownload.filename, "demo-video-transcript-zh.txt");
+  assert.match(file, /Language: 简体中文/);
+  assert.match(file, /TRANSCRIPT:\n\n第一句中文。\n\n第二句中文。\n/);
+  assert.doesNotMatch(file, /First complete English sentence|Original description/);
+
+  setMode("bilingual");
+  await helpers.exportTranscript();
+  file = await captureDownload.blob.text();
+  assert.equal(captureDownload.filename, "demo-video-transcript-bilingual.txt");
+  assert.match(file, /First complete English sentence[^\n]*\n第一句中文。/);
+  assert.match(file, /Second complete English sentence[^\n]*\n第二句中文。/);
+
+  setMode("original");
+  await helpers.exportTranscript();
+  file = await captureDownload.blob.text();
+  assert.equal(captureDownload.filename, "demo-video-transcript.txt");
+  assert.match(file, /TRANSCRIPT:\n\nOriginal raw transcript\n/);
+  assert.match(file, /Original description/);
+
+  translationCache.delete(`video-1:zh:semantic:${segments[1].id}`);
+  setMode("zh");
+  captureDownload.blob = null;
+  await helpers.exportTranscript();
+  assert.equal(captureDownload.blob, null);
 });
 
 test("Explain exposes English, Chinese, and bilingual display helpers", () => {

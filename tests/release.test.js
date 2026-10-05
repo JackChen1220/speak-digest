@@ -21,10 +21,11 @@ test("manifest uses minimized install-time permissions", () => {
     "https://api.supadata.ai/*",
     "https://api.deepseek.com/*",
     "https://api.tavily.com/*",
+    "https://dict.youdao.com/*",
   ]);
   assert.equal(Object.hasOwn(manifest, "optional_host_permissions"), false);
-  assert.equal(manifest.version, "1.3.0");
-  assert.equal(`youtube-digest-v${manifest.version}.zip`, "youtube-digest-v1.3.0.zip");
+  assert.equal(manifest.version, "1.3.1");
+  assert.equal(`speak-digest-v${manifest.version}.zip`, "speak-digest-v1.3.1.zip");
 });
 
 test("v1.3.0 release docs describe only the selectively integrated features", () => {
@@ -89,14 +90,14 @@ test("release copy documents current scope without em dashes", () => {
   assert.doesNotMatch(manifest.description, /—/);
   assert.doesNotMatch(packageJson.description, /—/);
 
-  assert.equal(manifest.name, "YouTube Digest");
-  assert.equal(packageJson.name, "youtube-digest");
-  assert.match(read("scripts/package-extension.sh"), /youtube-digest-v\$version\.zip/);
+  assert.equal(manifest.name, "Speak Digest");
+  assert.equal(packageJson.name, "speak-digest");
+  assert.match(read("scripts/package-extension.sh"), /speak-digest-v\$version\.zip/);
   assert.doesNotMatch(
     [readme, chineseReadme, read("PRIVACY.md"), read("SECURITY.md")].join("\n"),
     /\bYT Digest\b/,
   );
-  assert.match(readme, /^# YouTube Digest$/m);
+  assert.match(readme, /^# Speak Digest$/m);
   assert.match(
     readme,
     /Turn every YouTube video into a resource for deep learning\./,
@@ -121,7 +122,7 @@ test("release copy documents current scope without em dashes", () => {
   );
   assert.match(readme, /upstream issues and pull requests are not accepted/i);
   assert.doesNotMatch(readme, /^## Contributing$/m);
-  assert.match(chineseReadme, /^# YouTube Digest$/m);
+  assert.match(chineseReadme, /^# Speak Digest$/m);
   assert.match(chineseReadme, /把每个 YouTube 视频变成一份可以深入学习的资料/);
   assert.match(chineseReadme, /^## 让你的编程 Agent 帮你安装$/m);
   assert.match(
@@ -208,7 +209,7 @@ test("release copy documents current scope without em dashes", () => {
   );
   assert.match(
     optionsPage,
-    /Before copying, open the[\s\S]*exact YouTube Digest project folder that Chrome loaded through[\s\S]*Load unpacked[\s\S]*For a first-time installation, optional permanent[\s\S]*~\/Documents\/youtube-digest[\s\S]*%USERPROFILE%\\Documents\\youtube-digest[\s\S]*suggestions, not assumed paths/,
+    /Before copying, open the[\s\S]*exact Speak Digest project folder that Chrome loaded through[\s\S]*Load unpacked[\s\S]*For a first-time installation, optional permanent[\s\S]*~\/Documents\/youtube-digest[\s\S]*%USERPROFILE%\\Documents\\youtube-digest[\s\S]*suggestions, not assumed paths/,
   );
   assert.match(
     optionsPage,
@@ -234,7 +235,7 @@ test("release copy documents current scope without em dashes", () => {
     /if\s*\(\s*!settings\.tavilyApiKey\s*\)/,
   );
 
-  const customizationPrompt = `Customize my local copy of YouTube Digest to use [PROVIDER] with [MODEL]. Work only in the currently open workspace. Before editing anything, verify that this workspace contains manifest.json and that its name is YouTube Digest. If verification fails, stop and tell me: "Open the exact YouTube Digest project folder that Chrome loaded through Load unpacked in your coding agent, then paste this prompt again." Do not search other folders or the whole disk, edit a guessed copy, assume an installation path, or claim that Chrome or the extension can reveal the absolute OS source path. Update the API endpoint, request format, and minimum Chrome host permissions needed for that provider. Preserve the bring-your-own-key model and local Chrome storage. Keep all API keys out of source code, commits, logs, screenshots, and this chat; after the code is ready, tell me where I should enter the key myself. Keep DeepSeek-specific fields and retries provider-scoped, update README.md, README.zh-CN.md, PRIVACY.md, SECURITY.md, and the tests, then run npm test, npm run check, and npm run package. Finally, explain how to reload the unpacked extension and test it on a real YouTube video.`;
+  const customizationPrompt = `Customize my local copy of Speak Digest to use [PROVIDER] with [MODEL]. Work only in the currently open workspace. Before editing anything, verify that this workspace contains manifest.json and that its name is Speak Digest. If verification fails, stop and tell me: "Open the exact Speak Digest project folder that Chrome loaded through Load unpacked in your coding agent, then paste this prompt again." Do not search other folders or the whole disk, edit a guessed copy, assume an installation path, or claim that Chrome or the extension can reveal the absolute OS source path. Update the API endpoint, request format, and minimum Chrome host permissions needed for that provider. Preserve the bring-your-own-key model and local Chrome storage. Keep all API keys out of source code, commits, logs, screenshots, and this chat; after the code is ready, tell me where I should enter the key myself. Keep DeepSeek-specific fields and retries provider-scoped, update README.md, README.zh-CN.md, PRIVACY.md, SECURITY.md, and the tests, then run npm test, npm run check, and npm run package. Finally, explain how to reload the unpacked extension and test it on a real YouTube video.`;
   assert.ok(optionsPage.includes(`>${customizationPrompt}</textarea>`));
   assert.doesNotMatch(customizationPrompt, /Documents|USERPROFILE/);
 
@@ -243,11 +244,11 @@ test("release copy documents current scope without em dashes", () => {
   assert.match(readme, /customized summary templates/i);
   assert.match(
     readme,
-    /first open the exact YouTube Digest project folder that Chrome loaded through \*\*Load unpacked\*\* in your coding agent/,
+    /first open the exact Speak Digest project folder that Chrome loaded through \*\*Load unpacked\*\* in your coding agent/,
   );
   assert.match(
     chineseReadme,
-    /先在编程 Agent 中打开 Chrome 通过“加载已解压的扩展程序”使用的那个准确的 YouTube Digest 项目文件夹/,
+    /先在编程 Agent 中打开 Chrome 通过“加载已解压的扩展程序”使用的那个准确的 Speak Digest 项目文件夹/,
   );
 
   const publishedDocs = [
@@ -273,8 +274,8 @@ test("English release copy documents Ask and Library behavior", () => {
   assert.match(readme, /Vocabulary[\s\S]*up to 500/i);
   assert.match(readme, /selected text[\s\S]*Chinese meaning[\s\S]*context[\s\S]*video[\s\S]*timestamp/i);
   assert.match(readme, /IPA[\s\S]*pinyin[\s\S]*may be imperfect/i);
-  assert.match(readme, /local Chrome or system voice[\s\S]*does not send or store audio/i);
-  assert.match(readme, /English[\s\S]*Samantha[\s\S]*en-US[\s\S]*automatic/i);
+  assert.match(readme, /pronunciation[\s\S]*Youdao[\s\S]*only when clicked/i);
+  assert.match(readme, /browser speech[\s\S]*Natural[\s\S]*Google[\s\S]*Samantha/i);
   assert.match(readme, /highlighted[\s\S]*all videos/i);
   assert.match(readme, /Ask[\s\S]*multi-turn[\s\S]*not persisted[\s\S]*switch videos[\s\S]*close the panel/i);
   assert.match(readme, /exactly three[\s\S]*suggested questions[\s\S]*cached locally/i);
@@ -291,8 +292,8 @@ test("Chinese release copy documents Ask and Library behavior", () => {
   assert.match(readme, /Vocabulary[\s\S]*500/);
   assert.match(readme, /选中文本[\s\S]*中文释义[\s\S]*上下文[\s\S]*视频[\s\S]*时间戳/);
   assert.match(readme, /IPA[\s\S]*拼音[\s\S]*可能不完全准确/);
-  assert.match(readme, /本地 Chrome 或系统语音[\s\S]*不会发送或保存音频/);
-  assert.match(readme, /英文[\s\S]*Samantha[\s\S]*en-US[\s\S]*自动/);
+  assert.match(readme, /点击英文[\s\S]*有道词典[\s\S]*美式音频/);
+  assert.match(readme, /失败[\s\S]*浏览器语音[\s\S]*Natural[\s\S]*Google[\s\S]*Samantha/);
   assert.match(readme, /高亮[\s\S]*所有视频/);
   assert.match(readme, /Ask[\s\S]*多轮[\s\S]*不会持久化[\s\S]*切换视频[\s\S]*关闭侧边栏/);
   assert.match(readme, /恰好 3 个[\s\S]*推荐问题[\s\S]*本地缓存/);
@@ -320,7 +321,7 @@ test("release copy documents optional Tavily BYOK search and current costs", () 
   assert.match(docs, /validated[\s\S]*(?:source URLs|sources)/i);
 });
 
-test("privacy and security docs cover Ask, Tavily, Vocabulary, and local speech", () => {
+test("privacy and security docs cover Ask, Tavily, Vocabulary, and dictionary audio", () => {
   const privacy = read("PRIVACY.md");
   const security = read("SECURITY.md");
 
@@ -330,14 +331,15 @@ test("privacy and security docs cover Ask, Tavily, Vocabulary, and local speech"
   assert.match(privacy, /Ask conversation history[\s\S]*not persisted[\s\S]*switch videos[\s\S]*panel closes/i);
   assert.match(privacy, /Vocabulary[\s\S]*500[\s\S]*saved locally/i);
   assert.match(privacy, /suggested questions[\s\S]*stored locally/i);
-  assert.match(privacy, /speech[\s\S]*local Chrome or system voices[\s\S]*no audio/i);
+  assert.match(privacy, /dict\.youdao\.com\/dictvoice[\s\S]*selected term[\s\S]*not include the video transcript/i);
+  assert.match(privacy, /Youdao dictionary host access[\s\S]*click pronunciation/i);
   assert.match(privacy, /Tavily API key[\s\S]*Chrome's extension storage/i);
   assert.match(privacy, /transcript[\s\S]*bounded recent Ask history[\s\S]*selected text[\s\S]*Vocabulary/i);
 
   assert.match(security, /Tavily/);
   assert.match(security, /transcript[\s\S]*web results[\s\S]*model output[\s\S]*untrusted/i);
   assert.match(security, /validated source URLs[\s\S]*escaped[\s\S]*bounded/i);
-  assert.match(security, /speech[\s\S]*local[\s\S]*no audio/i);
+  assert.match(security, /dict\.youdao\.com[\s\S]*click[\s\S]*speechSynthesis/i);
   assert.match(security, /API keys[\s\S]*Chrome local extension storage[\s\S]*password vault/i);
 });
 
@@ -347,7 +349,7 @@ test("project guide preserves Ask and Vocabulary release boundaries", () => {
   assert.match(guide, /Ask Web search[\s\S]*opt-in[\s\S]*off by default[\s\S]*Tavily/i);
   assert.match(guide, /Ask conversation history[\s\S]*never persist/i);
   assert.match(guide, /Vocabulary[\s\S]*separate[\s\S]*notes[\s\S]*500/i);
-  assert.match(guide, /highlight[\s\S]*safe[\s\S]*local Chrome or system voice[\s\S]*no audio/i);
+  assert.match(guide, /highlight[\s\S]*safe[\s\S]*Youdao dictionary audio[\s\S]*after a user clicks/i);
   assert.match(guide, /paid live-provider calls[\s\S]*automated tests/i);
 });
 
